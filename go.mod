@@ -1,4 +1,4 @@
-module game
+module github.com/zehongharryqu/kingdom-of-heaven
 
 go 1.23.2
 

@@ -11,7 +11,8 @@ import (
 //go:embed *
 var assets embed.FS
 
-var PlayerSprite = mustLoadImage("assets/player.png")
+var CardSmall = mustLoadImage("Card Small.png")
+var CardBig = mustLoadImage("Card Big.png")
 
 func mustLoadImage(name string) *ebiten.Image {
 	f, err := assets.Open(name)

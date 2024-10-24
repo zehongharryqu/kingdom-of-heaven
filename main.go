@@ -2,8 +2,13 @@ package main
 
 import (
 	"image"
+	"strings"
 
+	"github.com/apache/pulsar-client-go/pulsaradmin"
+	"github.com/apache/pulsar-client-go/pulsaradmin/pkg/admin"
+	"github.com/apache/pulsar-client-go/pulsaradmin/pkg/utils"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
@@ -58,10 +63,12 @@ func (h *Hand) In(x, y int) *ebiten.Image {
 }
 
 type Game struct {
-	state string
-	t     Typewriter
-	pc    *PulsarClient
-	h     *Hand
+	state   string
+	t       Typewriter
+	pa      admin.Client
+	pc      *PulsarClient
+	players []string
+	h       *Hand
 }
 
 func (g *Game) Update() error {
@@ -70,8 +77,25 @@ func (g *Game) Update() error {
 		g.t.Update()
 		if g.t.confirmedName != "" && g.t.confirmedRoom != "" {
 			g.pc = newPulsarClient(g.t.confirmedRoom, g.t.confirmedName)
-			g.state = Playing // Todo: implement Lobby
+			g.state = Lobby // Todo: implement Lobby
 		}
+	case Lobby:
+		topicName, err := utils.GetTopicName(g.pc.roomName)
+		if err != nil {
+			panic(err)
+		}
+		topicStats, err := g.pa.Topics().GetStats(*topicName)
+		if err != nil {
+			panic(err)
+		}
+		subscriptions := topicStats.Subscriptions
+		keys := make([]string, len(subscriptions))
+		i := 0
+		for k := range subscriptions {
+			keys[i] = k
+			i++
+		}
+		g.players = keys
 	}
 	return nil
 }
@@ -80,6 +104,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	switch g.state {
 	case RoomName:
 		g.t.Draw(screen)
+	case Lobby:
+		ebitenutil.DebugPrint(screen, "Players in this room:\n"+strings.Join(g.players, "\n"))
 	case Playing:
 		g.h.Draw(screen)
 		cursorX, cursorY := ebiten.CursorPosition()
@@ -104,11 +130,17 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 
 func main() {
 
+	cfg := &pulsaradmin.Config{}
+	admin, err := pulsaradmin.NewClient(cfg)
+	if err != nil {
+		panic(err)
+	}
+
 	c := &Card{assets.CardBig, assets.CardSmall, nil}
 	h := &Hand{[]*Card{c, c, c, c, c}}
-	g := &Game{RoomName, Typewriter{}, nil, h}
+	g := &Game{RoomName, Typewriter{}, admin, nil, nil, h}
 
-	err := ebiten.RunGame(g)
+	err = ebiten.RunGame(g)
 	if err != nil {
 		panic(err)
 	}

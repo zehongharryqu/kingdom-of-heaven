@@ -1,3 +1,4 @@
+// sets up the pulsar client for the player
 package main
 
 import (
@@ -55,14 +56,14 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 	}
 
 	producer, err := client.CreateProducer(pulsar.ProducerOptions{
-		Topic: "persistent://public/default/koh-topic",
+		Topic: "persistent://public/default/" + roomName,
 	})
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1; i++ {
 		if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
 			Payload: []byte(fmt.Sprintf("hello-%d", i)),
 		}); err != nil {
@@ -73,8 +74,8 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 	}
 
 	consumer, err := client.Subscribe(pulsar.ConsumerOptions{
-		Topic:                       "persistent://public/default/koh-topic",
-		SubscriptionName:            "test-sub",
+		Topic:                       "persistent://public/default/" + roomName,
+		SubscriptionName:            playerName,
 		SubscriptionInitialPosition: pulsar.SubscriptionPositionEarliest,
 	})
 
@@ -82,7 +83,7 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 		log.Fatal(err)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1; i++ {
 		msg, err := consumer.Receive(context.Background())
 		if err != nil {
 			log.Fatal(err)

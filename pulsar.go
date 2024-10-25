@@ -10,6 +10,12 @@ import (
 	"github.com/apache/pulsar-client-go/pulsar"
 )
 
+// message types
+const (
+	PlayerJoined = "Player joined: "
+	PlayerLeft   = "Player left: "
+)
+
 type PulsarClient struct {
 	roomName, playerName string
 	client               pulsar.Client
@@ -26,6 +32,13 @@ type PulsarClient struct {
 }
 
 func (c *PulsarClient) Close() {
+	if msgId, err := c.producer.Send(context.Background(), &pulsar.ProducerMessage{
+		Payload: []byte(PlayerLeft + c.playerName),
+	}); err != nil {
+		log.Fatal(err)
+	} else {
+		fmt.Printf("Published message: %v \n", msgId)
+	}
 	if err := c.consumer.Unsubscribe(); err != nil {
 		log.Fatal(err)
 	}
@@ -63,14 +76,12 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 		log.Fatal(err)
 	}
 
-	for i := 0; i < 1; i++ {
-		if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
-			Payload: []byte(playerName),
-		}); err != nil {
-			log.Fatal(err)
-		} else {
-			fmt.Printf("Published message: %v \n", msgId)
-		}
+	if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
+		Payload: []byte(PlayerJoined + playerName),
+	}); err != nil {
+		log.Fatal(err)
+	} else {
+		fmt.Printf("Published message: %v \n", msgId)
 	}
 
 	consumer, err := client.Subscribe(pulsar.ConsumerOptions{
@@ -82,18 +93,6 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// for i := 0; i < 1; i++ {
-	// 	msg, err := consumer.Receive(context.Background())
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-
-	// 	fmt.Printf("Received message msgId: %v -- content: '%s'\n",
-	// 		msg.ID(), string(msg.Payload()))
-
-	// 	consumer.Ack(msg)
-	// }
 
 	return &PulsarClient{roomName, playerName, client, producer, consumer}
 }

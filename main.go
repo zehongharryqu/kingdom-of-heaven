@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"image"
+	"log"
+	"slices"
 	"strings"
 
-	"github.com/apache/pulsar-client-go/pulsaradmin"
-	"github.com/apache/pulsar-client-go/pulsaradmin/pkg/admin"
-	"github.com/apache/pulsar-client-go/pulsaradmin/pkg/utils"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
@@ -65,7 +66,6 @@ func (h *Hand) In(x, y int) *ebiten.Image {
 type Game struct {
 	state   string
 	t       Typewriter
-	pa      admin.Client
 	pc      *PulsarClient
 	players []string
 	h       *Hand
@@ -77,25 +77,28 @@ func (g *Game) Update() error {
 		g.t.Update()
 		if g.t.confirmedName != "" && g.t.confirmedRoom != "" {
 			g.pc = newPulsarClient(g.t.confirmedRoom, g.t.confirmedName)
-			g.state = Lobby // Todo: implement Lobby
+			g.state = Lobby
+			go func() {
+				for g.state == Lobby {
+					msg, err := g.pc.consumer.Receive(context.Background())
+					if err != nil {
+						log.Fatal(err)
+					}
+					messageText := string(msg.Payload())
+					fmt.Printf("Received message msgId: %v -- content: '%s'\n",
+						msg.ID(), messageText)
+
+					if strings.HasPrefix(messageText, PlayerJoined) {
+						g.players = append(g.players, messageText[len(PlayerJoined):])
+					} else if strings.HasPrefix(messageText, PlayerLeft) {
+						g.players = slices.DeleteFunc(g.players, func(str string) bool { return str == messageText[len(PlayerLeft):] })
+					}
+					g.pc.consumer.Ack(msg)
+				}
+			}()
 		}
 	case Lobby:
-		topicName, err := utils.GetTopicName(g.pc.roomName)
-		if err != nil {
-			panic(err)
-		}
-		topicStats, err := g.pa.Topics().GetStats(*topicName)
-		if err != nil {
-			panic(err)
-		}
-		subscriptions := topicStats.Subscriptions
-		keys := make([]string, len(subscriptions))
-		i := 0
-		for k := range subscriptions {
-			keys[i] = k
-			i++
-		}
-		g.players = keys
+
 	}
 	return nil
 }
@@ -129,23 +132,11 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 func main() {
-
-	cfg := &pulsaradmin.Config{
-		AuthPlugin:     "oauth2",
-		IssuerEndpoint: "https://auth.streamnative.cloud/",
-		Audience:       "urn:sn:pulsar:o-hwa6o:kingdom-of-heaven-instance",
-		KeyFile:        "file:///Users/harry/Downloads/o-hwa6o-harry.json",
-		WebServiceURL:  "https://pc-de347430.gcp-shared-usce1.g.snio.cloud:6651"}
-	admin, err := pulsaradmin.NewClient(cfg)
-	if err != nil {
-		panic(err)
-	}
-
 	c := &Card{assets.CardBig, assets.CardSmall, nil}
 	h := &Hand{[]*Card{c, c, c, c, c}}
-	g := &Game{RoomName, Typewriter{}, admin, nil, nil, h}
+	g := &Game{RoomName, Typewriter{}, nil, nil, h}
 
-	err = ebiten.RunGame(g)
+	err := ebiten.RunGame(g)
 	if err != nil {
 		panic(err)
 	}

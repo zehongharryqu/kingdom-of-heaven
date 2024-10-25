@@ -65,7 +65,7 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 
 	for i := 0; i < 1; i++ {
 		if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
-			Payload: []byte(fmt.Sprintf("hello-%d", i)),
+			Payload: []byte(playerName),
 		}); err != nil {
 			log.Fatal(err)
 		} else {
@@ -83,17 +83,17 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 		log.Fatal(err)
 	}
 
-	for i := 0; i < 1; i++ {
-		msg, err := consumer.Receive(context.Background())
-		if err != nil {
-			log.Fatal(err)
-		}
+	// for i := 0; i < 1; i++ {
+	// 	msg, err := consumer.Receive(context.Background())
+	// 	if err != nil {
+	// 		log.Fatal(err)
+	// 	}
 
-		fmt.Printf("Received message msgId: %v -- content: '%s'\n",
-			msg.ID(), string(msg.Payload()))
+	// 	fmt.Printf("Received message msgId: %v -- content: '%s'\n",
+	// 		msg.ID(), string(msg.Payload()))
 
-		consumer.Ack(msg)
-	}
+	// 	consumer.Ack(msg)
+	// }
 
 	return &PulsarClient{roomName, playerName, client, producer, consumer}
 }

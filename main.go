@@ -130,7 +130,12 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 
 func main() {
 
-	cfg := &pulsaradmin.Config{}
+	cfg := &pulsaradmin.Config{
+		AuthPlugin:     "oauth2",
+		IssuerEndpoint: "https://auth.streamnative.cloud/",
+		Audience:       "urn:sn:pulsar:o-hwa6o:kingdom-of-heaven-instance",
+		KeyFile:        "file:///Users/harry/Downloads/o-hwa6o-harry.json",
+		WebServiceURL:  "https://pc-de347430.gcp-shared-usce1.g.snio.cloud:6651"}
 	admin, err := pulsaradmin.NewClient(cfg)
 	if err != nil {
 		panic(err)

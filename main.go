@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"image"
 	"log"
-	"slices"
+	"sort"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -13,14 +12,16 @@ import (
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
+// sizes
 const (
 	ScreenHeight = 480
 	ScreenWidth  = 640
-)
-const (
+
 	ArtBigHeight  = 400
 	ArtBigWidth   = 300
 	ArtSmallWidth = 50
+
+	MaxNameChars = 10
 )
 
 // game states
@@ -30,44 +31,11 @@ const (
 	Playing  = "Playing"
 )
 
-type Card struct {
-	artBig     *ebiten.Image
-	artSmall   *ebiten.Image
-	alphaImage *image.Alpha
-}
-
-type Hand struct {
-	cards []*Card
-}
-
-func (h *Hand) Update() {
-
-}
-
-func (h *Hand) Draw(screen *ebiten.Image) {
-	offset := (ScreenWidth - ArtSmallWidth*len(h.cards)) / 2
-	for i, c := range h.cards {
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Translate(float64(offset+i*ArtSmallWidth), ScreenHeight-ArtSmallWidth)
-		screen.DrawImage(c.artSmall, op)
-	}
-}
-
-// given logical screen pixel location x,y returns the detailed art if there is a card in hand there
-func (h *Hand) In(x, y int) *ebiten.Image {
-	localX := x - ((ScreenWidth - ArtSmallWidth*len(h.cards)) / 2)
-	localY := y - (ScreenHeight - ArtSmallWidth)
-	if localX > 0 && localX < ArtSmallWidth*len(h.cards) && localY > 0 && localY < ArtSmallWidth {
-		return h.cards[localX/ArtSmallWidth].artBig
-	}
-	return nil
-}
-
 type Game struct {
 	state   string
 	t       Typewriter
 	pc      *PulsarClient
-	players []string
+	players map[string]PlayerData
 	h       *Hand
 }
 
@@ -89,16 +57,31 @@ func (g *Game) Update() error {
 						msg.ID(), messageText)
 
 					if strings.HasPrefix(messageText, PlayerJoined) {
-						g.players = append(g.players, messageText[len(PlayerJoined):])
+						g.players[messageText[len(PlayerJoined):]] = PlayerData{false}
 					} else if strings.HasPrefix(messageText, PlayerLeft) {
-						g.players = slices.DeleteFunc(g.players, func(str string) bool { return str == messageText[len(PlayerLeft):] })
+						delete(g.players, messageText[len(PlayerLeft):])
+					} else if strings.HasPrefix(messageText, PlayerToggledReady) {
+						g.players[messageText[len(PlayerToggledReady):]] = PlayerData{!g.players[messageText[len(PlayerToggledReady):]].ready}
 					}
 					g.pc.consumer.Ack(msg)
 				}
 			}()
 		}
 	case Lobby:
-
+		if repeatingKeyPressed(ebiten.KeyEnter) || repeatingKeyPressed(ebiten.KeyNumpadEnter) {
+			producerSend(g.pc.producer, PlayerToggledReady+g.pc.playerName)
+		}
+		if len(g.players) > 1 {
+			ready := true
+			for _, playerData := range g.players {
+				if !playerData.ready {
+					ready = false
+				}
+			}
+			if ready {
+				g.state = Playing
+			}
+		}
 	}
 	return nil
 }
@@ -108,7 +91,25 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case RoomName:
 		g.t.Draw(screen)
 	case Lobby:
-		ebitenutil.DebugPrint(screen, "Players in this room:\n"+strings.Join(g.players, "\n"))
+		lobbyMessage := "Room " + g.t.confirmedRoom + "\nHit enter when ready to start\n\nPlayers in this room:\n"
+		// sort player names otherwise it keeps switching them around
+		names := make([]string, len(g.players))
+
+		i := 0
+		for name := range g.players {
+			names[i] = name
+			i++
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			lobbyMessage += name + strings.Repeat(" ", MaxNameChars+1-len(name)) + "| "
+			if g.players[name].ready {
+				lobbyMessage += "Ready!\n"
+			} else {
+				lobbyMessage += "Waiting...\n"
+			}
+		}
+		ebitenutil.DebugPrint(screen, lobbyMessage)
 	case Playing:
 		g.h.Draw(screen)
 		cursorX, cursorY := ebiten.CursorPosition()
@@ -132,9 +133,9 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 func main() {
-	c := &Card{assets.CardBig, assets.CardSmall, nil}
+	c := &Card{assets.CardBig, assets.CardSmall}
 	h := &Hand{[]*Card{c, c, c, c, c}}
-	g := &Game{RoomName, Typewriter{}, nil, nil, h}
+	g := &Game{RoomName, Typewriter{}, nil, make(map[string]PlayerData), h}
 
 	err := ebiten.RunGame(g)
 	if err != nil {

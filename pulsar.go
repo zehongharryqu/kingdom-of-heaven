@@ -12,8 +12,9 @@ import (
 
 // message types
 const (
-	PlayerJoined = "Player joined: "
-	PlayerLeft   = "Player left: "
+	PlayerJoined       = "Player joined: "
+	PlayerLeft         = "Player left: "
+	PlayerToggledReady = "Player toggled ready: "
 )
 
 type PulsarClient struct {
@@ -76,13 +77,7 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 		log.Fatal(err)
 	}
 
-	if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
-		Payload: []byte(PlayerJoined + playerName),
-	}); err != nil {
-		log.Fatal(err)
-	} else {
-		fmt.Printf("Published message: %v \n", msgId)
-	}
+	producerSend(producer, PlayerJoined+playerName)
 
 	consumer, err := client.Subscribe(pulsar.ConsumerOptions{
 		Topic:                       "persistent://public/default/" + roomName,
@@ -95,4 +90,14 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 	}
 
 	return &PulsarClient{roomName, playerName, client, producer, consumer}
+}
+
+func producerSend(producer pulsar.Producer, message string) {
+	if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
+		Payload: []byte(message),
+	}); err != nil {
+		log.Fatal(err)
+	} else {
+		fmt.Printf("Published message: %v \n", msgId)
+	}
 }

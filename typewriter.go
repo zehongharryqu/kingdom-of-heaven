@@ -38,9 +38,9 @@ func (t *Typewriter) Update() error {
 	t.runes = ebiten.AppendInputChars(t.runes[:0])
 	t.currentText += string(t.runes)
 
-	// Adjust the string to be at most 10 characters
-	if len(t.currentText) > 10 {
-		t.currentText = t.currentText[:10]
+	// Adjust the string to be at most MaxNameChars characters
+	if len(t.currentText) > MaxNameChars {
+		t.currentText = t.currentText[:MaxNameChars]
 	}
 
 	// If the enter key is pressed, confirm the current text

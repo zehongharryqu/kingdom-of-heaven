@@ -1,14 +1,18 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"bytes"
+	"image/color"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
@@ -22,6 +26,8 @@ const (
 	ArtSmallWidth = 50
 
 	MaxNameChars = 10
+
+	NormalFontSize = 20
 )
 
 // game states
@@ -31,12 +37,26 @@ const (
 	Playing  = "Playing"
 )
 
+var (
+	MPlusFaceSource *text.GoTextFaceSource
+)
+
+func init() {
+	s, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.MPlus1pRegular_ttf))
+	if err != nil {
+		log.Fatal(err)
+	}
+	MPlusFaceSource = s
+}
+
 type Game struct {
-	state   string
-	t       Typewriter
-	pc      *PulsarClient
-	players map[string]PlayerData
-	h       *Hand
+	state       string
+	t           Typewriter
+	pc          *PulsarClient
+	players     map[string]PlayerData
+	turnModulus []string
+	h           *Hand
+	turn        int
 }
 
 func (g *Game) Update() error {
@@ -48,28 +68,26 @@ func (g *Game) Update() error {
 			g.state = Lobby
 			go func() {
 				for g.state == Lobby {
-					msg, err := g.pc.consumer.Receive(context.Background())
-					if err != nil {
-						log.Fatal(err)
-					}
-					messageText := string(msg.Payload())
-					fmt.Printf("Received message msgId: %v -- content: '%s'\n",
-						msg.ID(), messageText)
+					message := consumerReceive(g.pc.consumer)
 
-					if strings.HasPrefix(messageText, PlayerJoined) {
-						g.players[messageText[len(PlayerJoined):]] = PlayerData{false}
-					} else if strings.HasPrefix(messageText, PlayerLeft) {
-						delete(g.players, messageText[len(PlayerLeft):])
-					} else if strings.HasPrefix(messageText, PlayerToggledReady) {
-						g.players[messageText[len(PlayerToggledReady):]] = PlayerData{!g.players[messageText[len(PlayerToggledReady):]].ready}
+					switch message[0] {
+					case JoinedLobby:
+						pid, err := strconv.Atoi(message[2])
+						if err != nil {
+							log.Fatal(err)
+						}
+						g.players[message[1]] = PlayerData{pid: pid, ready: false}
+					case LeftLobby:
+						delete(g.players, message[1])
+					case ToggledReady:
+						g.players[message[1]] = PlayerData{pid: g.players[message[1]].pid, ready: !g.players[message[1]].ready}
 					}
-					g.pc.consumer.Ack(msg)
 				}
 			}()
 		}
 	case Lobby:
 		if repeatingKeyPressed(ebiten.KeyEnter) || repeatingKeyPressed(ebiten.KeyNumpadEnter) {
-			producerSend(g.pc.producer, PlayerToggledReady+g.pc.playerName)
+			producerSend(g.pc.producer, []string{ToggledReady, g.pc.playerName})
 		}
 		if len(g.players) > 1 {
 			ready := true
@@ -80,7 +98,33 @@ func (g *Game) Update() error {
 			}
 			if ready {
 				g.state = Playing
+				// create turn order by pid
+				names := make([]string, len(g.players))
+				i := 0
+				for name := range g.players {
+					names[i] = name
+					i++
+				}
+				sort.SliceStable(names, func(i, j int) bool {
+					return g.players[names[i]].pid < g.players[names[j]].pid
+				})
+				g.turnModulus = names
+				// consume messages while playing
+				go func() {
+					for g.state == Playing {
+						message := consumerReceive(g.pc.consumer)
+						switch message[0] {
+						case Clicked:
+
+						}
+						g.turn++
+					}
+				}()
 			}
+		}
+	case Playing:
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			producerSend(g.pc.producer, []string{Clicked, g.pc.playerName})
 		}
 	}
 	return nil
@@ -111,7 +155,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		ebitenutil.DebugPrint(screen, lobbyMessage)
 	case Playing:
+		// draw player's turn message
+		msg := g.turnModulus[g.turn%len(g.players)] + "'s turn"
+		op := &text.DrawOptions{}
+		// op.GeoM.Translate(10, 10)
+		op.ColorScale.ScaleWithColor(color.White)
+		text.Draw(screen, msg, &text.GoTextFace{
+			Source: MPlusFaceSource,
+			Size:   NormalFontSize,
+		}, op)
+		// draw hand
 		g.h.Draw(screen)
+		// calculate mouse position to determine hover
 		cursorX, cursorY := ebiten.CursorPosition()
 		var displayX int
 		if cursorX > ScreenWidth/2 {
@@ -135,7 +190,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 func main() {
 	c := &Card{assets.CardBig, assets.CardSmall}
 	h := &Hand{[]*Card{c, c, c, c, c}}
-	g := &Game{RoomName, Typewriter{}, nil, make(map[string]PlayerData), h}
+	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData), h: h}
 
 	err := ebiten.RunGame(g)
 	if err != nil {

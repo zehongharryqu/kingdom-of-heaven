@@ -3,7 +3,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/rand"
+	"strconv"
 
 	"log"
 
@@ -12,9 +15,10 @@ import (
 
 // message types
 const (
-	PlayerJoined       = "Player joined: "
-	PlayerLeft         = "Player left: "
-	PlayerToggledReady = "Player toggled ready: "
+	JoinedLobby  = "J"
+	LeftLobby    = "L"
+	ToggledReady = "TR"
+	Clicked      = "C"
 )
 
 type PulsarClient struct {
@@ -33,13 +37,7 @@ type PulsarClient struct {
 }
 
 func (c *PulsarClient) Close() {
-	if msgId, err := c.producer.Send(context.Background(), &pulsar.ProducerMessage{
-		Payload: []byte(PlayerLeft + c.playerName),
-	}); err != nil {
-		log.Fatal(err)
-	} else {
-		fmt.Printf("Published message: %v \n", msgId)
-	}
+	producerSend(c.producer, []string{LeftLobby, c.playerName})
 	if err := c.consumer.Unsubscribe(); err != nil {
 		log.Fatal(err)
 	}
@@ -77,7 +75,7 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 		log.Fatal(err)
 	}
 
-	producerSend(producer, PlayerJoined+playerName)
+	producerSend(producer, []string{JoinedLobby, playerName, strconv.Itoa(rand.Int())})
 
 	consumer, err := client.Subscribe(pulsar.ConsumerOptions{
 		Topic:                       "persistent://public/default/" + roomName,
@@ -92,12 +90,30 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 	return &PulsarClient{roomName, playerName, client, producer, consumer}
 }
 
-func producerSend(producer pulsar.Producer, message string) {
+func producerSend(producer pulsar.Producer, message []string) {
+	msg, err := json.Marshal(message)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
-		Payload: []byte(message),
+		Payload: msg,
 	}); err != nil {
 		log.Fatal(err)
 	} else {
 		fmt.Printf("Published message: %v \n", msgId)
 	}
+}
+
+func consumerReceive(consumer pulsar.Consumer) []string {
+	msg, err := consumer.Receive(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Received message msgId: %v -- content: '%s'\n",
+		msg.ID(), string(msg.Payload()))
+	consumer.Ack(msg)
+	message := &[]string{}
+	json.Unmarshal(msg.Payload(), message)
+	return *message
 }

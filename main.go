@@ -13,7 +13,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
-	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
 // sizes
@@ -37,6 +36,12 @@ const (
 	Playing  = "Playing"
 )
 
+// turn phases
+const (
+	WorkPhase     = "Work Phase"
+	BlessingPhase = "Blessing Phase"
+)
+
 var (
 	MPlusFaceSource *text.GoTextFaceSource
 )
@@ -55,8 +60,29 @@ type Game struct {
 	pc          *PulsarClient
 	players     map[string]PlayerData
 	turnModulus []string
-	h           *Hand
 	turn        int
+	phase       string
+	myCards     *PlayerCards
+}
+
+func (g *Game) ReceiveMessages() {
+	for {
+		message := consumerReceive(g.pc.consumer)
+
+		switch message[0] {
+		case JoinedLobby:
+			pid, err := strconv.Atoi(message[2])
+			if err != nil {
+				log.Fatal(err)
+			}
+			g.players[message[1]] = PlayerData{pid: pid, ready: false}
+		case LeftLobby:
+			delete(g.players, message[1])
+		case ToggledReady:
+			g.players[message[1]] = PlayerData{pid: g.players[message[1]].pid, ready: !g.players[message[1]].ready}
+		case Clicked:
+		}
+	}
 }
 
 func (g *Game) Update() error {
@@ -66,24 +92,7 @@ func (g *Game) Update() error {
 		if g.t.confirmedName != "" && g.t.confirmedRoom != "" {
 			g.pc = newPulsarClient(g.t.confirmedRoom, g.t.confirmedName)
 			g.state = Lobby
-			go func() {
-				for g.state == Lobby {
-					message := consumerReceive(g.pc.consumer)
-
-					switch message[0] {
-					case JoinedLobby:
-						pid, err := strconv.Atoi(message[2])
-						if err != nil {
-							log.Fatal(err)
-						}
-						g.players[message[1]] = PlayerData{pid: pid, ready: false}
-					case LeftLobby:
-						delete(g.players, message[1])
-					case ToggledReady:
-						g.players[message[1]] = PlayerData{pid: g.players[message[1]].pid, ready: !g.players[message[1]].ready}
-					}
-				}
-			}()
+			go g.ReceiveMessages()
 		}
 	case Lobby:
 		if repeatingKeyPressed(ebiten.KeyEnter) || repeatingKeyPressed(ebiten.KeyNumpadEnter) {
@@ -109,17 +118,6 @@ func (g *Game) Update() error {
 					return g.players[names[i]].pid < g.players[names[j]].pid
 				})
 				g.turnModulus = names
-				// consume messages while playing
-				go func() {
-					for g.state == Playing {
-						message := consumerReceive(g.pc.consumer)
-						switch message[0] {
-						case Clicked:
-
-						}
-						g.turn++
-					}
-				}()
 			}
 		}
 	case Playing:
@@ -164,8 +162,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Source: MPlusFaceSource,
 			Size:   NormalFontSize,
 		}, op)
-		// draw hand
-		g.h.Draw(screen)
+		// draw player cards
+		g.myCards.Draw(screen)
 		// calculate mouse position to determine hover
 		cursorX, cursorY := ebiten.CursorPosition()
 		var displayX int
@@ -174,7 +172,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		} else {
 			displayX = cursorX
 		}
-		if displayArt := g.h.In(cursorX, cursorY); displayArt != nil {
+		if displayArt := g.myCards.In(cursorX, cursorY); displayArt != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
 			screen.DrawImage(displayArt, op)
@@ -188,9 +186,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 func main() {
-	c := &Card{assets.CardBig, assets.CardSmall}
-	h := &Hand{[]*Card{c, c, c, c, c}}
-	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData), h: h}
+	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData)}
 
 	err := ebiten.RunGame(g)
 	if err != nil {

@@ -1,13 +1,53 @@
 package main
 
-import "github.com/hajimehoshi/ebiten/v2"
+import (
+	"cmp"
+	"math/rand"
+	"slices"
+
+	"github.com/hajimehoshi/ebiten/v2"
+)
 
 type PlayerCards struct {
 	hand, deck, discard []*Card
 }
 
-func (pc *PlayerCards) Update() {
+func InitPlayerCards() *PlayerCards {
+	return &PlayerCards{discard: []*Card{Study, Study, Study, Study, Study, Study, Study, Parable, Parable, Parable}}
+}
 
+func (pc *PlayerCards) DrawNCards(n int) {
+	if len(pc.deck)+len(pc.discard) < n {
+		// not enough in deck and discard, draw everything
+		pc.hand = slices.Concat(pc.hand, pc.deck, pc.discard)
+		pc.deck = nil
+		pc.discard = nil
+	} else {
+		// enough cards in deck and discard, shuffle discard if necessary and draw from deck
+		if len(pc.deck) < n {
+			// not enough in just deck, shuffle discard and put it on the bottom of the deck
+			rand.Shuffle(len(pc.discard), func(i, j int) {
+				pc.discard[i], pc.discard[j] = pc.discard[j], pc.discard[i]
+			})
+			pc.deck = append(pc.deck, pc.discard...)
+			pc.discard = nil
+		}
+		// draw into hand
+		pc.hand = append(pc.hand, pc.deck[:n]...)
+		if len(pc.deck) == n {
+			pc.deck = nil
+		} else {
+			pc.deck = pc.deck[n+1:]
+		}
+	}
+	// sort hand
+	slices.SortFunc(pc.hand, func(a, b *Card) int {
+		return cmp.Or(
+			cmp.Compare(slices.Min(a.cardTypes), slices.Min(b.cardTypes)),
+			cmp.Compare(b.cost, a.cost),
+			cmp.Compare(a.name, b.name),
+		)
+	})
 }
 
 func (pc *PlayerCards) Draw(screen *ebiten.Image) {
@@ -98,42 +138,37 @@ func (k *Kingdom) In(x, y int) *ebiten.Image {
 // create a new kingdom given the 10 verses and number of players
 func InitKingdom(verses []*Card, n int) *Kingdom {
 	// starting amounts from the dominion wiki gameplay article
-	var startingStudy, startingPrayer, startingDevotion, startingParable, startingSermon, startingMiracle int
+	var startingStudy, startingPrayer, startingDevotion, startingGlory, startingMiracle int
 	switch n {
 	case 2:
 		startingStudy = 46
 		startingPrayer = 40
 		startingDevotion = 30
-		startingParable = 8
-		startingSermon = 8
+		startingGlory = 8
 		startingMiracle = 8
 	case 3:
 		startingStudy = 39
 		startingPrayer = 40
 		startingDevotion = 30
-		startingParable = 12
-		startingSermon = 12
+		startingGlory = 12
 		startingMiracle = 12
 	case 4:
 		startingStudy = 32
 		startingPrayer = 40
 		startingDevotion = 30
-		startingParable = 12
-		startingSermon = 12
+		startingGlory = 12
 		startingMiracle = 12
 	case 5:
 		startingStudy = 85
 		startingPrayer = 80
 		startingDevotion = 60
-		startingParable = 12
-		startingSermon = 12
+		startingGlory = 12
 		startingMiracle = 15
 	default:
 		startingStudy = 78
 		startingPrayer = 80
 		startingDevotion = 60
-		startingParable = 12
-		startingSermon = 12
+		startingGlory = 12
 		startingMiracle = 18
 	}
 	versePiles := []*VersePile{
@@ -141,12 +176,23 @@ func InitKingdom(verses []*Card, n int) *Kingdom {
 		{Study, startingStudy},
 		{Prayer, startingPrayer},
 		{Devotion, startingDevotion},
-		{Parable, startingParable},
-		{Sermon, startingSermon},
+		{Parable, startingGlory},
+		{Sermon, startingGlory},
 		{Miracle, startingMiracle},
 	}
+	// sort kingdom by cost and name
+	slices.SortFunc(verses, func(a, b *Card) int {
+		return cmp.Or(
+			cmp.Compare(a.cost, b.cost),
+			cmp.Compare(a.name, b.name),
+		)
+	})
 	for _, c := range verses {
-		versePiles = append(versePiles, &VersePile{c, 10}) // todo: glory cards
+		startingAmount := 10
+		if slices.Contains(c.cardTypes, GloryType) {
+			startingAmount = startingGlory
+		}
+		versePiles = append(versePiles, &VersePile{c, startingAmount})
 	}
 	return &Kingdom{v: versePiles}
 }

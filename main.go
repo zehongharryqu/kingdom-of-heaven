@@ -86,12 +86,16 @@ func (g *Game) ReceiveMessages() {
 		case ToggledReady:
 			g.players[message[1]] = PlayerData{pid: g.players[message[1]].pid, ready: !g.players[message[1]].ready}
 		case SetKingdom:
+			// generate local kingdom from message
 			cards := make([]*Card, 10)
 			for i, c := range message[1:] {
 				idx, _ := strconv.Atoi(c)
 				cards[i] = NonBaseCards[idx]
 			}
 			g.kingdom = InitKingdom(cards, len(g.players))
+			// create deck and discard
+			g.myCards = InitPlayerCards()
+			g.myCards.DrawNCards(5)
 		case Clicked:
 		}
 	}

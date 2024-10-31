@@ -96,4 +96,8 @@ var (
 	BethlehemSmall    = loadImage("small31.png")
 	DesiresSmall      = loadImage("small32.png")
 	GiftSmall         = loadImage("small33.png")
+
+	DiscardSmall = loadImage("discard.png")
+	DeckSmall    = loadImage("deck.png")
+	ReleaseSmall = loadImage("release.png")
 )

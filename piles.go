@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
 type PlayerCards struct {
@@ -52,17 +53,16 @@ func (pc *PlayerCards) DrawNCards(n int) {
 
 func (pc *PlayerCards) Draw(screen *ebiten.Image) {
 	// deck
-	if len(pc.deck) > 0 {
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Translate(DeckPileX, DiscardDeckPileY)
-		// TODO: back of card
-		screen.DrawImage(pc.deck[len(pc.deck)-1].artSmall, op)
-	}
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(DeckPileX, DiscardDeckPileY)
+	screen.DrawImage(assets.DeckSmall, op)
 	// discard
+	op = &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(DiscardPileX, DiscardDeckPileY)
 	if len(pc.discard) > 0 {
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Translate(DiscardPileX, DiscardDeckPileY)
 		screen.DrawImage(pc.discard[len(pc.discard)-1].artSmall, op)
+	} else {
+		screen.DrawImage(assets.DiscardSmall, op)
 	}
 	// hand
 	offset := (ScreenWidth - ArtSmallWidth*len(pc.hand)) / 2
@@ -118,10 +118,12 @@ func (k *Kingdom) Draw(screen *ebiten.Image) {
 			screen.DrawImage(v.c.artSmall, op)
 		}
 	}
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(ReleasedPileX, ReleasedPileY)
 	if n := len(k.released); n > 0 {
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Translate(ReleasedPileX, ReleasedPileY)
 		screen.DrawImage(k.released[n-1].artSmall, op)
+	} else {
+		screen.DrawImage(assets.ReleaseSmall, op)
 	}
 }
 

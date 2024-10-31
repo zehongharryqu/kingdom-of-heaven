@@ -18,6 +18,7 @@ const (
 	JoinedLobby  = "J"
 	LeftLobby    = "L"
 	ToggledReady = "TR"
+	SetKingdom   = "SK"
 	Clicked      = "C"
 )
 

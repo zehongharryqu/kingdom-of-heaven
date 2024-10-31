@@ -11,6 +11,20 @@ func (pc *PlayerCards) Update() {
 }
 
 func (pc *PlayerCards) Draw(screen *ebiten.Image) {
+	// deck
+	if len(pc.deck) > 0 {
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(DeckPileX, DiscardDeckPileY)
+		// TODO: back of card
+		screen.DrawImage(pc.deck[len(pc.deck)-1].artSmall, op)
+	}
+	// discard
+	if len(pc.discard) > 0 {
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(DiscardPileX, DiscardDeckPileY)
+		screen.DrawImage(pc.discard[len(pc.discard)-1].artSmall, op)
+	}
+	// hand
 	offset := (ScreenWidth - ArtSmallWidth*len(pc.hand)) / 2
 	for i, c := range pc.hand {
 		op := &ebiten.DrawImageOptions{}
@@ -48,8 +62,11 @@ var (
 )
 
 const (
-	ReleasedPileX = 460
-	ReleasedPileY = 10
+	ReleasedPileX    = 460
+	ReleasedPileY    = 10
+	DiscardPileX     = 520
+	DeckPileX        = 580
+	DiscardDeckPileY = 370
 )
 
 // draws the kingdom piles and released pile

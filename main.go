@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image/color"
 	"log"
+	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +28,9 @@ const (
 	MaxNameChars = 10
 
 	NormalFontSize = 20
+
+	PlayedCardsY   = 250
+	UnplayedCardsY = 310
 )
 
 // game states
@@ -62,6 +66,7 @@ type Game struct {
 	turnModulus []string
 	turn        int
 	phase       string
+	kingdom     *Kingdom
 	myCards     *PlayerCards
 }
 
@@ -80,6 +85,13 @@ func (g *Game) ReceiveMessages() {
 			delete(g.players, message[1])
 		case ToggledReady:
 			g.players[message[1]] = PlayerData{pid: g.players[message[1]].pid, ready: !g.players[message[1]].ready}
+		case SetKingdom:
+			cards := make([]*Card, 10)
+			for i, c := range message[1:] {
+				idx, _ := strconv.Atoi(c)
+				cards[i] = NonBaseCards[idx]
+			}
+			g.kingdom = InitKingdom(cards, len(g.players))
 		case Clicked:
 		}
 	}
@@ -117,6 +129,19 @@ func (g *Game) Update() error {
 				sort.SliceStable(names, func(i, j int) bool {
 					return g.players[names[i]].pid < g.players[names[j]].pid
 				})
+				// the first player generates the kingdom
+				if names[0] == g.pc.playerName {
+					// create strings out of non base card indices, get a random 10, and send it to everyone
+					nonBaseCardStrings := make([]string, len(NonBaseCards))
+					for i := range NonBaseCards {
+						nonBaseCardStrings[i] = strconv.Itoa(i)
+					}
+					rand.Shuffle(len(nonBaseCardStrings), func(i, j int) {
+						nonBaseCardStrings[i], nonBaseCardStrings[j] = nonBaseCardStrings[j], nonBaseCardStrings[i]
+					})
+					producerSend(g.pc.producer, append([]string{SetKingdom}, nonBaseCardStrings[:10]...))
+					// g.kingdom = InitKingdom(NonBaseCards[], len(names))
+				}
 				g.turnModulus = names
 			}
 		}
@@ -154,7 +179,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		ebitenutil.DebugPrint(screen, lobbyMessage)
 	case Playing:
 		// draw player's turn message
-		msg := g.turnModulus[g.turn%len(g.players)] + "'s turn"
+		msg := g.turnModulus[g.turn%len(g.players)] + "'s turn: " + g.phase
 		op := &text.DrawOptions{}
 		// op.GeoM.Translate(10, 10)
 		op.ColorScale.ScaleWithColor(color.White)

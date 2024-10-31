@@ -76,7 +76,7 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 		log.Fatal(err)
 	}
 
-	producerSend(producer, []string{JoinedLobby, playerName, strconv.Itoa(rand.Int())})
+	producerSend(producer, []string{JoinedLobby, playerName, strconv.Itoa(rand.Intn(10))})
 
 	consumer, err := client.Subscribe(pulsar.ConsumerOptions{
 		Topic:                       "persistent://public/default/" + roomName,

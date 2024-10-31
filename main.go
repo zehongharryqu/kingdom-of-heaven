@@ -192,7 +192,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Size:   NormalFontSize,
 		}, op)
 		// draw player cards
+		if g.myCards == nil {
+			return
+		}
 		g.myCards.Draw(screen)
+		// draw kingdom
+		if g.kingdom == nil {
+			return
+		}
+		g.kingdom.Draw(screen)
 		// calculate mouse position to determine hover
 		cursorX, cursorY := ebiten.CursorPosition()
 		var displayX int
@@ -202,6 +210,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			displayX = cursorX
 		}
 		if displayArt := g.myCards.In(cursorX, cursorY); displayArt != nil {
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Translate(float64(displayX), 0)
+			screen.DrawImage(displayArt, op)
+		} else if displayArt := g.kingdom.In(cursorX, cursorY); displayArt != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
 			screen.DrawImage(displayArt, op)

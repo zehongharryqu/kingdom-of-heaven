@@ -27,7 +27,9 @@ const (
 
 	MaxNameChars = 10
 
-	NormalFontSize = 20
+	BigFontSize    = 20
+	NormalFontSize = 16
+	SmallFontSize  = 12
 
 	PlayedCardsY   = 250
 	UnplayedCardsY = 310
@@ -45,6 +47,11 @@ const (
 	WorkPhase     = "Work Phase"
 	BlessingPhase = "Blessing Phase"
 )
+
+// stats for the current player, for display
+type TurnStats struct {
+	works, blessings, faith int
+}
 
 var (
 	MPlusFaceSource *text.GoTextFaceSource
@@ -66,6 +73,7 @@ type Game struct {
 	turnModulus []string
 	turn        int
 	phase       string
+	ts          TurnStats
 	kingdom     *Kingdom
 	myCards     *PlayerCards
 }
@@ -185,7 +193,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		// draw player's turn message
 		msg := g.turnModulus[g.turn%len(g.players)] + "'s turn: " + g.phase
 		op := &text.DrawOptions{}
-		// op.GeoM.Translate(10, 10)
+		op.ColorScale.ScaleWithColor(color.White)
+		text.Draw(screen, msg, &text.GoTextFace{
+			Source: MPlusFaceSource,
+			Size:   BigFontSize,
+		}, op)
+		// draw turn stats
+		msg = "Works: " + strconv.Itoa(g.ts.works) + " Blessings: " + strconv.Itoa(g.ts.blessings) + " Faith: " + strconv.Itoa(g.ts.faith)
+		op = &text.DrawOptions{}
+		op.GeoM.Translate(0, BigFontSize)
 		op.ColorScale.ScaleWithColor(color.White)
 		text.Draw(screen, msg, &text.GoTextFace{
 			Source: MPlusFaceSource,
@@ -227,7 +243,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 func main() {
-	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData)}
+	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData), phase: BlessingPhase, ts: TurnStats{works: 1, blessings: 1, faith: 0}}
 
 	err := ebiten.RunGame(g)
 	if err != nil {

@@ -127,11 +127,11 @@ func (k *Kingdom) Draw(screen *ebiten.Image) {
 	}
 }
 
-// given logical screen pixel location x,y returns the detailed art if there is a kingdom card there
-func (k *Kingdom) In(x, y int) *ebiten.Image {
+// given logical screen pixel location x,y returns the card if there is a kingdom card there
+func (k *Kingdom) In(x, y int) *Card {
 	for i, v := range k.v {
 		if x > KingdomPileX[i] && x < KingdomPileX[i]+ArtSmallWidth && y > KingdomPileY[i] && y < KingdomPileY[i]+ArtSmallWidth {
-			return v.c.artBig
+			return v.c
 		}
 	}
 	return nil

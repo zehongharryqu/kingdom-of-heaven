@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"log"
 	"math/rand"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
 // sizes
@@ -33,6 +35,11 @@ const (
 
 	PlayedCardsY   = 250
 	UnplayedCardsY = 310
+
+	EndPhaseX      = 245
+	EndPhaseY      = 370
+	EndPhaseWidth  = 150
+	EndPhaseHeight = 50
 )
 
 // game states
@@ -53,6 +60,12 @@ type TurnStats struct {
 	works, blessings, faith int
 }
 
+func (ts *TurnStats) reset() {
+	ts.works = 1
+	ts.blessings = 1
+	ts.faith = 0
+}
+
 var (
 	MPlusFaceSource *text.GoTextFaceSource
 )
@@ -66,16 +79,38 @@ func init() {
 }
 
 type Game struct {
-	state       string
-	t           Typewriter
-	pc          *PulsarClient
-	players     map[string]PlayerData
+	// what state the game is in
+	state string
+	// for typing in the lobby
+	t Typewriter
+	// for sending messages between players
+	pc *PulsarClient
+	// all the players
+	players map[string]PlayerData
+	// which player gets which turn
 	turnModulus []string
-	turn        int
-	phase       string
-	ts          TurnStats
-	kingdom     *Kingdom
-	myCards     *PlayerCards
+	// which turn are we on
+	turn int
+	// which phase is this turn in
+	phase string
+	// the active player's stats
+	ts TurnStats
+	// the kingdom piles
+	kingdom *Kingdom
+	// our cards
+	myCards *PlayerCards
+	// which cards are currently in play, to draw
+	inPlayWork, inPlayFaith []*Card
+}
+
+// local player actions on turn end (end blessing phase)
+func (g *Game) rest() {
+	// put hand and in play cards into discard
+	g.myCards.discard = slices.Concat(g.myCards.discard, g.inPlayWork, g.myCards.hand)
+	// draw new hand
+	g.myCards.DrawNCards(5)
+	// tell everyone the blessing phase ended
+	producerSend(g.pc.producer, []string{EndPhase})
 }
 
 func (g *Game) ReceiveMessages() {
@@ -104,7 +139,17 @@ func (g *Game) ReceiveMessages() {
 			// create deck and discard
 			g.myCards = InitPlayerCards()
 			g.myCards.DrawNCards(5)
-		case Clicked:
+		case EndPhase:
+			switch g.phase {
+			case WorkPhase:
+			case BlessingPhase:
+				// turn ended
+				g.turn++
+				g.phase = WorkPhase
+				g.inPlayFaith = nil
+				g.inPlayWork = nil
+				g.ts.reset()
+			}
 		}
 	}
 }
@@ -152,14 +197,42 @@ func (g *Game) Update() error {
 						nonBaseCardStrings[i], nonBaseCardStrings[j] = nonBaseCardStrings[j], nonBaseCardStrings[i]
 					})
 					producerSend(g.pc.producer, append([]string{SetKingdom}, nonBaseCardStrings[:10]...))
-					// g.kingdom = InitKingdom(NonBaseCards[], len(names))
 				}
 				g.turnModulus = names
 			}
 		}
 	case Playing:
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			producerSend(g.pc.producer, []string{Clicked, g.pc.playerName})
+		// can only interact if it's our turn
+		if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
+			switch g.phase {
+			case WorkPhase:
+			case BlessingPhase:
+				// if no more blessings, auto rest
+				if g.ts.blessings == 0 {
+					g.rest()
+					return nil
+				}
+				if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+					cursorX, cursorY := ebiten.CursorPosition()
+					// if clicked end phase, rest
+					if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
+						g.rest()
+						return nil
+					}
+					// if clicked card to buy, buy it
+					if c := g.kingdom.In(cursorX, cursorY); c != nil {
+						// only do something if you can afford it
+						if g.ts.faith >= c.cost {
+							// gains to discard
+							g.myCards.discard = append(g.myCards.discard, c)
+							// tell everyone you bought it so all kingdoms can decrement their supply
+							producerSend(g.pc.producer, []string{Gained, g.pc.playerName, c.name})
+							// TODO: check if game is done
+						}
+					}
+				}
+			}
+
 		}
 	}
 	return nil
@@ -217,6 +290,17 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			return
 		}
 		g.kingdom.Draw(screen)
+		// draw end phase button if it's our turn
+		if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Translate(EndPhaseX, EndPhaseY)
+			switch g.phase {
+			case WorkPhase:
+				screen.DrawImage(assets.EndWorkPhase, op)
+			case BlessingPhase:
+				screen.DrawImage(assets.EndBlessingPhase, op)
+			}
+		}
 		// calculate mouse position to determine hover
 		cursorX, cursorY := ebiten.CursorPosition()
 		var displayX int
@@ -229,10 +313,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
 			screen.DrawImage(displayArt, op)
-		} else if displayArt := g.kingdom.In(cursorX, cursorY); displayArt != nil {
+		} else if c := g.kingdom.In(cursorX, cursorY); c != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
-			screen.DrawImage(displayArt, op)
+			screen.DrawImage(c.artBig, op)
 		}
 	}
 

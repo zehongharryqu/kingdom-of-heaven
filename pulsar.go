@@ -19,7 +19,8 @@ const (
 	LeftLobby    = "L"
 	ToggledReady = "TR"
 	SetKingdom   = "SK"
-	Clicked      = "C"
+	EndPhase     = "E"
+	Gained       = "G"
 )
 
 type PulsarClient struct {

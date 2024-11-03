@@ -97,4 +97,7 @@ var (
 	DiscardSmall = loadImage("discard.png")
 	DeckSmall    = loadImage("deck.png")
 	ReleaseSmall = loadImage("release.png")
+
+	EndWorkPhase     = loadImage("endworkphase.png")
+	EndBlessingPhase = loadImage("endworkphase.png")
 )

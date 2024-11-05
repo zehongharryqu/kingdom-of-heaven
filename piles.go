@@ -137,6 +137,16 @@ func (k *Kingdom) In(x, y int) *Card {
 	return nil
 }
 
+// removes a card from the kingdom (e.g. when gained)
+func (k *Kingdom) RemoveCard(name string) {
+	for _, v := range k.v {
+		if v.c.name == name {
+			v.n--
+			return
+		}
+	}
+}
+
 // create a new kingdom given the 10 verses and number of players
 func InitKingdom(verses []*Card, n int) *Kingdom {
 	// starting amounts from the dominion wiki gameplay article

@@ -101,6 +101,8 @@ type Game struct {
 	myCards *PlayerCards
 	// which cards are currently in play, to draw
 	inPlayWork, inPlayFaith []*Card
+	// list of actions that have occured, last 10 of which are drawn
+	actionLog []string
 }
 
 // local player actions on turn end (end blessing phase)
@@ -150,6 +152,14 @@ func (g *Game) ReceiveMessages() {
 				g.inPlayWork = nil
 				g.ts.reset()
 			}
+		case Gained:
+			// write that the player gained the card
+			g.actionLog = append(g.actionLog, message[1]+" gained "+message[2])
+			// remove a card from supply
+			g.kingdom.RemoveCard(message[2])
+			// decrement the player's blessings and faith
+			g.ts.blessings--
+			g.ts.faith -= CardNameMap[message[2]].cost
 		}
 	}
 }
@@ -279,6 +289,19 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		text.Draw(screen, msg, &text.GoTextFace{
 			Source: MPlusFaceSource,
 			Size:   NormalFontSize,
+		}, op)
+		// draw action log
+		if n := len(g.actionLog); n > 10 {
+			msg = strings.Join(g.actionLog[n-10:], "\n")
+		} else {
+			msg = strings.Join(g.actionLog, "\n")
+		}
+		op = &text.DrawOptions{}
+		op.GeoM.Translate(0, BigFontSize+NormalFontSize)
+		op.ColorScale.ScaleWithColor(color.White)
+		text.Draw(screen, msg, &text.GoTextFace{
+			Source: MPlusFaceSource,
+			Size:   SmallFontSize,
 		}, op)
 		// draw player cards
 		if g.myCards == nil {

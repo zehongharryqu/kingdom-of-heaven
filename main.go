@@ -141,7 +141,13 @@ func (g *Game) ReceiveMessages() {
 			}
 			g.players[message[1]] = PlayerData{pid: pid, ready: false}
 		case LeftLobby:
-			delete(g.players, message[1])
+			if name := message[1]; name == g.pc.playerName {
+				// if we are leaving, close our producer and consumer
+				g.pc.Close()
+			} else {
+				// if someone else is leaving, remove them
+				delete(g.players, name)
+			}
 		case ToggledReady:
 			g.players[message[1]] = PlayerData{pid: g.players[message[1]].pid, ready: !g.players[message[1]].ready}
 		case SetKingdom:
@@ -403,6 +409,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	g.pc.Close()
+	producerSend(g.pc.producer, []string{LeftLobby, g.pc.playerName})
+	if err := g.pc.consumer.Unsubscribe(); err != nil {
+		log.Fatal(err)
+	}
 }

@@ -74,13 +74,33 @@ func (pc *PlayerCards) Draw(screen *ebiten.Image) {
 }
 
 // given logical screen pixel location x,y returns the detailed art if there is a card in hand there
-func (pc *PlayerCards) In(x, y int) *ebiten.Image {
+func (pc *PlayerCards) inHand(x, y int) *ebiten.Image {
 	localX := x - ((ScreenWidth - ArtSmallWidth*len(pc.hand)) / 2)
 	localY := y - (ScreenHeight - ArtSmallWidth)
 	if localX > 0 && localX < ArtSmallWidth*len(pc.hand) && localY > 0 && localY < ArtSmallWidth {
 		return pc.hand[localX/ArtSmallWidth].artBig
 	}
 	return nil
+}
+
+// given logical screen pixel location x,y returns the number of cards in deck if hovered
+func (pc *PlayerCards) inDeck(x, y int) int {
+	if x > DeckPileX && x < DeckPileX+ArtSmallWidth && y > DiscardDeckPileY && y < DiscardDeckPileY+ArtSmallWidth {
+		return len(pc.deck)
+	}
+	return -1
+}
+
+// given logical screen pixel location x,y returns the detailed art and the number of cards in discard if hovered
+func (pc *PlayerCards) inDiscard(x, y int) (*ebiten.Image, int) {
+	if x > DiscardPileX && x < DiscardPileX+ArtSmallWidth && y > DiscardDeckPileY && y < DiscardDeckPileY+ArtSmallWidth {
+		if n := len(pc.discard); n > 0 {
+			return pc.discard[n-1].artBig, n
+		} else {
+			return nil, 0
+		}
+	}
+	return nil, -1
 }
 
 // returns true if there are any works cards in hand
@@ -138,10 +158,10 @@ func (k *Kingdom) Draw(screen *ebiten.Image) {
 }
 
 // given logical screen pixel location x,y returns the card if there is a kingdom card there
-func (k *Kingdom) In(x, y int) *Card {
+func (k *Kingdom) In(x, y int) *VersePile {
 	for i, v := range k.v {
 		if x > KingdomPileX[i] && x < KingdomPileX[i]+ArtSmallWidth && y > KingdomPileY[i] && y < KingdomPileY[i]+ArtSmallWidth {
-			return v.c
+			return v
 		}
 	}
 	return nil

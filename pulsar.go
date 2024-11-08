@@ -3,10 +3,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 
 	"log"
 
@@ -92,12 +92,9 @@ func newPulsarClient(roomName, playerName string) *PulsarClient {
 }
 
 func producerSend(producer pulsar.Producer, message []string) {
-	msg, err := json.Marshal(message)
-	if err != nil {
-		log.Fatal(err)
-	}
+	msg := strings.Join(message, "\\")
 	if msgId, err := producer.Send(context.Background(), &pulsar.ProducerMessage{
-		Payload: msg,
+		Payload: []byte(msg),
 	}); err != nil {
 		log.Fatal(err)
 	} else {
@@ -114,7 +111,6 @@ func consumerReceive(consumer pulsar.Consumer) []string {
 	fmt.Printf("Received message msgId: %v -- content: '%s'\n",
 		msg.ID(), string(msg.Payload()))
 	consumer.Ack(msg)
-	message := &[]string{}
-	json.Unmarshal(msg.Payload(), message)
-	return *message
+	message := strings.Split(string(msg.Payload()), "\\")
+	return message
 }

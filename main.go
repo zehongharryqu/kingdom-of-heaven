@@ -16,6 +16,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
@@ -180,7 +181,6 @@ func (g *Game) ReceiveMessages() {
 			case BlessingPhase:
 				// turn ended
 				g.turn++
-				fmt.Println(g.turn)
 				g.phase = WorkPhase
 				g.inPlayFaith = nil
 				g.inPlayWork = nil
@@ -285,13 +285,13 @@ func (g *Game) Update() error {
 						return nil
 					}
 					// if clicked card to buy, buy it
-					if c := g.kingdom.In(cursorX, cursorY); c != nil {
+					if vp := g.kingdom.In(cursorX, cursorY); vp != nil {
 						// only do something if you can afford it
-						if g.ts.faith >= c.cost {
+						if g.ts.faith >= vp.c.cost {
 							// gains to discard
-							g.myCards.discard = append(g.myCards.discard, c)
+							g.myCards.discard = append(g.myCards.discard, vp.c)
 							// tell everyone you bought it so all kingdoms can decrement their supply
-							producerSend(g.pc.producer, []string{Gained, g.pc.playerName, c.name})
+							producerSend(g.pc.producer, []string{Gained, g.pc.playerName, vp.c.name})
 							// TODO: check if game is done
 						}
 					}
@@ -399,17 +399,38 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		} else {
 			displayX = cursorX
 		}
-		if displayArt := g.myCards.In(cursorX, cursorY); displayArt != nil {
+		if art := g.myCards.inHand(cursorX, cursorY); art != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
-			screen.DrawImage(displayArt, op)
-		} else if c := g.kingdom.In(cursorX, cursorY); c != nil {
+			screen.DrawImage(art, op)
+		} else if vp := g.kingdom.In(cursorX, cursorY); vp != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
-			screen.DrawImage(c.artBig, op)
+			screen.DrawImage(vp.c.artBig, op)
+			drawTextBox(screen, cursorX, cursorY, strconv.Itoa(vp.n))
+		} else if n := g.myCards.inDeck(cursorX, cursorY); n != -1 {
+			drawTextBox(screen, cursorX, cursorY, strconv.Itoa(n))
+		} else if art, n := g.myCards.inDiscard(cursorX, cursorY); n != -1 {
+			if art != nil {
+				op := &ebiten.DrawImageOptions{}
+				op.GeoM.Translate(float64(displayX), 0)
+				screen.DrawImage(art, op)
+			}
+			drawTextBox(screen, cursorX, cursorY, strconv.Itoa(n))
 		}
 	}
+}
 
+func drawTextBox(dst *ebiten.Image, x, y int, msg string) {
+	vector.DrawFilledRect(dst, float32(x), float32(y), SmallFontSize, SmallFontSize, color.Black, true)
+	op := &text.DrawOptions{}
+	op.GeoM.Translate(float64(x), float64(y))
+	op.ColorScale.ScaleWithColor(color.White)
+	op.LineSpacing = SmallFontSize
+	text.Draw(dst, msg, &text.GoTextFace{
+		Source: MPlusFaceSource,
+		Size:   SmallFontSize,
+	}, op)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {

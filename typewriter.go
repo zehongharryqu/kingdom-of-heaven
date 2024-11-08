@@ -2,6 +2,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -41,6 +43,11 @@ func (t *Typewriter) Update() error {
 	// Adjust the string to be at most MaxNameChars characters
 	if len(t.currentText) > MaxNameChars {
 		t.currentText = t.currentText[:MaxNameChars]
+	}
+
+	// Take out backslashes
+	if strings.Contains(t.currentText, "\\") {
+		t.currentText = strings.ReplaceAll(t.currentText, "\\", "")
 	}
 
 	// If the enter key is pressed, confirm the current text

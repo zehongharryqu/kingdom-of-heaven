@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"image/color"
 	"log"
 	"math/rand"
@@ -33,8 +34,8 @@ const (
 	NormalFontSize = 16
 	SmallFontSize  = 12
 
-	PlayedCardsY   = 250
-	UnplayedCardsY = 310
+	InPlayWorkY  = 250
+	InPlayFaithY = 310
 
 	EndPhaseX      = 245
 	EndPhaseY      = 370
@@ -105,11 +106,24 @@ type Game struct {
 	actionLog []string
 }
 
+// show everyone your faith cards at the start of your blessing phase (end work phase)
+func (g *Game) startBlessing() {
+	var faithCards []string
+	for _, c := range g.myCards.hand {
+		if slices.Contains(c.cardTypes, FaithType) {
+			faithCards = append(faithCards, c.name)
+		}
+	}
+	producerSend(g.pc.producer, append([]string{EndPhase}, faithCards...))
+}
+
 // local player actions on turn end (end blessing phase)
 func (g *Game) rest() {
 	// put hand and in play cards into discard
 	g.myCards.discard = slices.Concat(g.myCards.discard, g.inPlayWork, g.myCards.hand)
+	fmt.Printf("discard len: %d \n", len(g.myCards.discard))
 	// draw new hand
+	g.myCards.hand = nil
 	g.myCards.DrawNCards(5)
 	// tell everyone the blessing phase ended
 	producerSend(g.pc.producer, []string{EndPhase})
@@ -144,6 +158,13 @@ func (g *Game) ReceiveMessages() {
 		case EndPhase:
 			switch g.phase {
 			case WorkPhase:
+				// moving to blessing phase
+				g.phase = BlessingPhase
+				// see which faith cards they are playing and calculate their faith
+				for _, c := range message[1:] {
+					g.inPlayFaith = append(g.inPlayFaith, CardNameMap[c])
+					g.ts.faith += CardNameMap[c].faith
+				}
 			case BlessingPhase:
 				// turn ended
 				g.turn++
@@ -216,6 +237,20 @@ func (g *Game) Update() error {
 		if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
 			switch g.phase {
 			case WorkPhase:
+				// if no more works, auto start blessing
+				if g.ts.works == 0 || !g.myCards.HasWorks() {
+					g.startBlessing()
+					return nil
+				}
+				if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+					cursorX, cursorY := ebiten.CursorPosition()
+					// if clicked end phase, start blessing
+					if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
+						g.startBlessing()
+						return nil
+					}
+					// TODO: click to play work cards
+				}
 			case BlessingPhase:
 				// if no more blessings, auto rest
 				if g.ts.blessings == 0 {
@@ -299,10 +334,22 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		op = &text.DrawOptions{}
 		op.GeoM.Translate(0, BigFontSize+NormalFontSize)
 		op.ColorScale.ScaleWithColor(color.White)
+		op.LineSpacing = SmallFontSize
 		text.Draw(screen, msg, &text.GoTextFace{
 			Source: MPlusFaceSource,
 			Size:   SmallFontSize,
 		}, op)
+		// draw in play cards
+		for i, c := range g.inPlayWork {
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Translate(float64(i*ArtSmallWidth), InPlayWorkY)
+			screen.DrawImage(c.artSmall, op)
+		}
+		for i, c := range g.inPlayFaith {
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Translate(float64(i*ArtSmallWidth), InPlayFaithY)
+			screen.DrawImage(c.artSmall, op)
+		}
 		// draw player cards
 		if g.myCards == nil {
 			return
@@ -350,7 +397,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 func main() {
-	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData), phase: BlessingPhase, ts: TurnStats{works: 1, blessings: 1, faith: 0}}
+	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData), phase: WorkPhase, ts: TurnStats{works: 1, blessings: 1, faith: 0}}
 
 	err := ebiten.RunGame(g)
 	if err != nil {

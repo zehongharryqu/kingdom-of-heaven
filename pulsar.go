@@ -39,10 +39,13 @@ type PulsarClient struct {
 }
 
 func (c *PulsarClient) Close() {
+	// tell everyone you've ;eft
 	producerSend(c.producer, []string{LeftLobby, c.playerName})
 	if err := c.consumer.Unsubscribe(); err != nil {
 		log.Fatal(err)
 	}
+	// ack your own leaving
+	consumerReceive(c.consumer)
 	c.producer.Close()
 	c.consumer.Close()
 	c.client.Close()

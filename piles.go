@@ -83,6 +83,16 @@ func (pc *PlayerCards) In(x, y int) *ebiten.Image {
 	return nil
 }
 
+// returns true if there are any works cards in hand
+func (pc *PlayerCards) HasWorks() bool {
+	for _, c := range pc.hand {
+		if slices.Contains(c.cardTypes, WorkType) {
+			return true
+		}
+	}
+	return false
+}
+
 type VersePile struct {
 	// which card this is a pile of
 	c *Card

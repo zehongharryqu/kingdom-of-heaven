@@ -15,12 +15,12 @@ type Card struct {
 
 // card types: for sorting hand
 const (
-	TemptationType = 4
-	FaithType      = 2
-	GloryType      = 3
-	WorkType       = 0
+	TemptationType = 5
+	FaithType      = 3
+	GloryType      = 4
+	WorkType       = 1
 	TrialType      = 0
-	ReactionType   = 1
+	ReactionType   = 2
 )
 
 var (

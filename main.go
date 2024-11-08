@@ -115,6 +115,9 @@ func (g *Game) startBlessing() {
 		}
 	}
 	producerSend(g.pc.producer, append([]string{EndPhase}, faithCards...))
+	// spin until the phase changes
+	for g.phase == WorkPhase {
+	}
 }
 
 // local player actions on turn end (end blessing phase)
@@ -127,6 +130,9 @@ func (g *Game) rest() {
 	g.myCards.DrawNCards(5)
 	// tell everyone the blessing phase ended
 	producerSend(g.pc.producer, []string{EndPhase})
+	// spin until the phase changes
+	for g.phase == BlessingPhase {
+	}
 }
 
 func (g *Game) ReceiveMessages() {
@@ -174,6 +180,7 @@ func (g *Game) ReceiveMessages() {
 			case BlessingPhase:
 				// turn ended
 				g.turn++
+				fmt.Println(g.turn)
 				g.phase = WorkPhase
 				g.inPlayFaith = nil
 				g.inPlayWork = nil
@@ -239,12 +246,16 @@ func (g *Game) Update() error {
 			}
 		}
 	case Playing:
+		if g.myCards == nil {
+			return nil
+		}
 		// can only interact if it's our turn
 		if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
 			switch g.phase {
 			case WorkPhase:
 				// if no more works, auto start blessing
 				if g.ts.works == 0 || !g.myCards.HasWorks() {
+					fmt.Println(g.pc.playerName + " has no works, starting blessing")
 					g.startBlessing()
 					return nil
 				}
@@ -252,6 +263,7 @@ func (g *Game) Update() error {
 					cursorX, cursorY := ebiten.CursorPosition()
 					// if clicked end phase, start blessing
 					if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
+						fmt.Println(g.pc.playerName + " clicked end works phase, starting blessing")
 						g.startBlessing()
 						return nil
 					}
@@ -260,6 +272,7 @@ func (g *Game) Update() error {
 			case BlessingPhase:
 				// if no more blessings, auto rest
 				if g.ts.blessings == 0 {
+					fmt.Println(g.pc.playerName + " has no blessings, ending turn")
 					g.rest()
 					return nil
 				}
@@ -267,6 +280,7 @@ func (g *Game) Update() error {
 					cursorX, cursorY := ebiten.CursorPosition()
 					// if clicked end phase, rest
 					if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
+						fmt.Println(g.pc.playerName + " clicked end blessings phase, ending turn")
 						g.rest()
 						return nil
 					}
@@ -410,7 +424,4 @@ func main() {
 		panic(err)
 	}
 	producerSend(g.pc.producer, []string{LeftLobby, g.pc.playerName})
-	if err := g.pc.consumer.Unsubscribe(); err != nil {
-		log.Fatal(err)
-	}
 }

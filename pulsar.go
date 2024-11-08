@@ -39,6 +39,9 @@ type PulsarClient struct {
 }
 
 func (c *PulsarClient) Close() {
+	if err := c.consumer.Unsubscribe(); err != nil {
+		log.Fatal(err)
+	}
 	c.producer.Close()
 	c.consumer.Close()
 	c.client.Close()

@@ -46,9 +46,10 @@ const (
 
 // game states
 const (
-	RoomName = "RoomName"
-	Lobby    = "Lobby"
-	Playing  = "Playing"
+	RoomName = iota
+	Lobby
+	Playing
+	Closed
 )
 
 // turn phases
@@ -82,7 +83,7 @@ func init() {
 
 type Game struct {
 	// what state the game is in
-	state string
+	state int
 	// for typing in the lobby
 	t Typewriter
 	// for sending messages between players
@@ -128,7 +129,7 @@ func (g *Game) rest() {
 	fmt.Printf("discard len: %d \n", len(g.myCards.discard))
 	// draw new hand
 	g.myCards.hand = nil
-	g.myCards.DrawNCards(5)
+	g.myCards.drawNCards(5)
 	// tell everyone the blessing phase ended
 	producerSend(g.pc.producer, []string{EndPhase})
 	// spin until the phase changes
@@ -151,6 +152,8 @@ func (g *Game) ReceiveMessages() {
 			if name := message[1]; name == g.pc.playerName {
 				// if we are leaving, close our producer and consumer
 				g.pc.Close()
+				g.state = Closed
+				return
 			} else {
 				// if someone else is leaving, remove them
 				delete(g.players, name)
@@ -167,7 +170,7 @@ func (g *Game) ReceiveMessages() {
 			g.kingdom = InitKingdom(cards, len(g.players))
 			// create deck and discard
 			g.myCards = InitPlayerCards()
-			g.myCards.DrawNCards(5)
+			g.myCards.drawNCards(5)
 		case EndPhase:
 			switch g.phase {
 			case WorkPhase:
@@ -329,7 +332,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		ebitenutil.DebugPrint(screen, lobbyMessage)
 	case Playing:
 		// draw player's turn message
-		msg := g.turnModulus[g.turn%len(g.players)] + "'s turn: " + g.phase
+		currentPlayer := g.turnModulus[g.turn%len(g.players)]
+		msg := currentPlayer + "'s turn: " + g.phase
 		op := &text.DrawOptions{}
 		op.ColorScale.ScaleWithColor(color.White)
 		text.Draw(screen, msg, &text.GoTextFace{
@@ -359,7 +363,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Source: MPlusFaceSource,
 			Size:   SmallFontSize,
 		}, op)
-		// draw in play cards
+		// draw in play cards (mat, label, works, faiths)
+		vector.DrawFilledRect(screen, 0, InPlayWorkY, KingdomMatX, (InPlayFaithY-InPlayWorkY)+ArtSmallWidth+BigFontSize+10, color.RGBA{245, 133, 63, 255}, true)
+		textOp := &text.DrawOptions{}
+		textOp.GeoM.Translate(0, InPlayFaithY+ArtSmallWidth)
+		textOp.ColorScale.ScaleWithColor(color.White)
+		text.Draw(screen, currentPlayer+"'s Cards in Play", &text.GoTextFace{
+			Source: MPlusFaceSource,
+			Size:   BigFontSize,
+		}, textOp)
 		for i, c := range g.inPlayWork {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(i*ArtSmallWidth), InPlayWorkY)
@@ -422,11 +434,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 
 func drawTextBox(dst *ebiten.Image, x, y int, msg string) {
-	vector.DrawFilledRect(dst, float32(x), float32(y), SmallFontSize, SmallFontSize, color.Black, true)
+	width := len(msg) * 10
+	vector.DrawFilledRect(dst, float32(x-width), float32(y-16), float32(width), 16, color.Black, true)
 	op := &text.DrawOptions{}
-	op.GeoM.Translate(float64(x), float64(y))
+	op.GeoM.Translate(float64(x-width), float64(y-16))
 	op.ColorScale.ScaleWithColor(color.White)
-	op.LineSpacing = SmallFontSize
 	text.Draw(dst, msg, &text.GoTextFace{
 		Source: MPlusFaceSource,
 		Size:   SmallFontSize,
@@ -445,4 +457,7 @@ func main() {
 		panic(err)
 	}
 	producerSend(g.pc.producer, []string{LeftLobby, g.pc.playerName})
+	// spin until game disposes everything
+	for g.state != Closed {
+	}
 }

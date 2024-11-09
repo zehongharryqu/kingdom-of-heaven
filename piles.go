@@ -2,10 +2,14 @@ package main
 
 import (
 	"cmp"
+	"fmt"
+	"image/color"
 	"math/rand"
 	"slices"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
@@ -17,7 +21,8 @@ func InitPlayerCards() *PlayerCards {
 	return &PlayerCards{discard: []*Card{Study, Study, Study, Study, Study, Study, Study, Parable, Parable, Parable}}
 }
 
-func (pc *PlayerCards) DrawNCards(n int) {
+func (pc *PlayerCards) drawNCards(n int) {
+	fmt.Printf("hand %d, discard %d, deck %d, drawing %d cards\n", len(pc.hand), len(pc.discard), len(pc.deck), n)
 	if len(pc.deck)+len(pc.discard) < n {
 		// not enough in deck and discard, draw everything
 		pc.hand = slices.Concat(pc.hand, pc.deck, pc.discard)
@@ -38,7 +43,7 @@ func (pc *PlayerCards) DrawNCards(n int) {
 		if len(pc.deck) == n {
 			pc.deck = nil
 		} else {
-			pc.deck = pc.deck[n+1:]
+			pc.deck = pc.deck[n:]
 		}
 	}
 	// sort hand
@@ -49,6 +54,7 @@ func (pc *PlayerCards) DrawNCards(n int) {
 			cmp.Compare(a.name, b.name),
 		)
 	})
+	fmt.Printf("hand %d, discard %d, deck %d\n", len(pc.hand), len(pc.discard), len(pc.deck))
 }
 
 func (pc *PlayerCards) Draw(screen *ebiten.Image) {
@@ -137,10 +143,24 @@ const (
 	DiscardPileX     = 520
 	DeckPileX        = 580
 	DiscardDeckPileY = 370
+	KingdomMatX      = 330
+	KingdomMatW      = 310
+	KingdomMatH      = 240
 )
 
 // draws the kingdom piles and released pile
 func (k *Kingdom) Draw(screen *ebiten.Image) {
+	// draw mat
+	vector.DrawFilledRect(screen, KingdomMatX, 0, KingdomMatW, KingdomMatH+10+BigFontSize, color.RGBA{124, 54, 38, 255}, true)
+	// draw mat label
+	textOp := &text.DrawOptions{}
+	textOp.GeoM.Translate(KingdomMatX, KingdomMatH)
+	textOp.ColorScale.ScaleWithColor(color.White)
+	text.Draw(screen, "Verse Piles", &text.GoTextFace{
+		Source: MPlusFaceSource,
+		Size:   BigFontSize,
+	}, textOp)
+	// draw kingdom piles
 	for i, v := range k.v {
 		if v.n > 0 {
 			op := &ebiten.DrawImageOptions{}
@@ -148,6 +168,7 @@ func (k *Kingdom) Draw(screen *ebiten.Image) {
 			screen.DrawImage(v.c.artSmall, op)
 		}
 	}
+	// draw released pile
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(ReleasedPileX, ReleasedPileY)
 	if n := len(k.released); n > 0 {

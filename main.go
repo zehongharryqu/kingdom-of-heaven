@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"image/color"
 	"log"
@@ -49,6 +50,7 @@ const (
 	RoomName = iota
 	Lobby
 	Playing
+	Ended
 	Closed
 )
 
@@ -89,7 +91,7 @@ type Game struct {
 	// for sending messages between players
 	pc *PulsarClient
 	// all the players
-	players map[string]PlayerData
+	players map[string]*PlayerData
 	// which player gets which turn
 	turnModulus []string
 	// which turn are we on
@@ -137,6 +139,16 @@ func (g *Game) rest() {
 	}
 }
 
+func (g *Game) gameDone() {
+	allCards := slices.Concat(g.myCards.deck, g.myCards.discard, g.myCards.hand)
+	var glory int
+	for _, c := range allCards {
+		glory += c.glory
+	}
+	producerSend(g.pc.producer, []string{Glory, g.pc.playerName, strconv.Itoa(glory)})
+	g.state = Ended
+}
+
 func (g *Game) ReceiveMessages() {
 	for {
 		message := consumerReceive(g.pc.consumer)
@@ -147,7 +159,7 @@ func (g *Game) ReceiveMessages() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			g.players[message[1]] = PlayerData{pid: pid, ready: false}
+			g.players[message[1]] = &PlayerData{name: message[1], pid: pid, ready: false}
 		case LeftLobby:
 			if name := message[1]; name == g.pc.playerName {
 				// if we are leaving, close our producer and consumer
@@ -159,7 +171,7 @@ func (g *Game) ReceiveMessages() {
 				delete(g.players, name)
 			}
 		case ToggledReady:
-			g.players[message[1]] = PlayerData{pid: g.players[message[1]].pid, ready: !g.players[message[1]].ready}
+			g.players[message[1]].toggleReady()
 		case SetKingdom:
 			// generate local kingdom from message
 			cards := make([]*Card, 10)
@@ -197,6 +209,10 @@ func (g *Game) ReceiveMessages() {
 			// decrement the player's blessings and faith
 			g.ts.blessings--
 			g.ts.faith -= CardNameMap[message[2]].cost
+		case Glory:
+			// update the player's data with their final glory
+			glory, _ := strconv.Atoi(message[2])
+			g.players[message[1]].setGlory(glory)
 		}
 	}
 }
@@ -249,8 +265,11 @@ func (g *Game) Update() error {
 			}
 		}
 	case Playing:
-		if g.myCards == nil {
+		if g.myCards == nil || g.kingdom == nil {
 			return nil
+		}
+		if g.kingdom.gameDone() {
+			g.gameDone()
 		}
 		// can only interact if it's our turn
 		if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
@@ -295,7 +314,6 @@ func (g *Game) Update() error {
 							g.myCards.discard = append(g.myCards.discard, vp.c)
 							// tell everyone you bought it so all kingdoms can decrement their supply
 							producerSend(g.pc.producer, []string{Gained, g.pc.playerName, vp.c.name})
-							// TODO: check if game is done
 						}
 					}
 				}
@@ -430,6 +448,22 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			}
 			drawTextBox(screen, cursorX, cursorY, strconv.Itoa(n))
 		}
+	case Ended:
+		msg := "Room " + g.t.confirmedRoom + "\n\nFinal Scores:\n"
+		// sort by scores
+		players := make([]*PlayerData, len(g.players))
+		i := 0
+		for _, p := range g.players {
+			players[i] = p
+			i++
+		}
+		slices.SortFunc(players, func(a, b *PlayerData) int {
+			return cmp.Compare(b.glory, a.glory)
+		})
+		for _, pd := range players {
+			msg += pd.name + strings.Repeat(" ", MaxNameChars+1-len(pd.name)) + "| " + strconv.Itoa(pd.glory) + " Glory\n"
+		}
+		ebitenutil.DebugPrint(screen, msg)
 	}
 }
 
@@ -450,7 +484,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 func main() {
-	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]PlayerData), phase: WorkPhase, ts: TurnStats{works: 1, blessings: 1, faith: 0}}
+	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]*PlayerData), phase: WorkPhase, ts: TurnStats{works: 1, blessings: 1, faith: 0}}
 
 	err := ebiten.RunGame(g)
 	if err != nil {

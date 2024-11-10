@@ -21,6 +21,7 @@ const (
 	SetKingdom   = "SK"
 	EndPhase     = "E"
 	Gained       = "G"
+	Glory        = "Gl"
 )
 
 type PulsarClient struct {

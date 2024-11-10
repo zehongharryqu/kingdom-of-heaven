@@ -148,6 +148,20 @@ const (
 	KingdomMatH      = 240
 )
 
+// checks if the game is done
+func (k *Kingdom) gameDone() bool {
+	if k.v[6].n == 0 {
+		return true
+	}
+	emptyPiles := 0
+	for _, v := range k.v {
+		if v.n == 0 {
+			emptyPiles++
+		}
+	}
+	return emptyPiles > 2
+}
+
 // draws the kingdom piles and released pile
 func (k *Kingdom) Draw(screen *ebiten.Image) {
 	// draw mat

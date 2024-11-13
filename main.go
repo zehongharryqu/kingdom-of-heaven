@@ -98,6 +98,8 @@ type Game struct {
 	turn int
 	// which phase is this turn in
 	phase string
+	// whether the local player currently needs to make a decision (other than normal work or blessing)
+	decision int
 	// the active player's stats
 	ts TurnStats
 	// the kingdom piles
@@ -149,7 +151,7 @@ func (g *Game) gameDone() {
 	g.state = Ended
 }
 
-func (g *Game) ReceiveMessages() {
+func (g *Game) receiveMessages() {
 	for {
 		message := consumerReceive(g.pc.consumer)
 
@@ -201,7 +203,17 @@ func (g *Game) ReceiveMessages() {
 				g.inPlayWork = nil
 				g.ts.reset()
 			}
+		case Played:
+			// write that the player played the card
+			g.actionLog = append(g.actionLog, message[1]+" played "+message[2])
+			// decrement the player's works
+			g.ts.works--
 		case Gained:
+			// write that the player gained the card
+			g.actionLog = append(g.actionLog, message[1]+" gained "+message[2])
+			// remove a card from supply
+			g.kingdom.RemoveCard(message[2])
+		case Bought:
 			// write that the player gained the card
 			g.actionLog = append(g.actionLog, message[1]+" gained "+message[2])
 			// remove a card from supply
@@ -224,7 +236,7 @@ func (g *Game) Update() error {
 		if g.t.confirmedName != "" && g.t.confirmedRoom != "" {
 			g.pc = newPulsarClient(g.t.confirmedRoom, g.t.confirmedName)
 			g.state = Lobby
-			go g.ReceiveMessages()
+			go g.receiveMessages()
 		}
 	case Lobby:
 		if repeatingKeyPressed(ebiten.KeyEnter) || repeatingKeyPressed(ebiten.KeyNumpadEnter) {
@@ -271,54 +283,63 @@ func (g *Game) Update() error {
 		if g.kingdom.gameDone() {
 			g.gameDone()
 		}
-		// can only interact if it's our turn
-		if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
-			switch g.phase {
-			case WorkPhase:
-				// if no more works, auto start blessing
-				if g.ts.works == 0 || !g.myCards.HasWorks() {
-					fmt.Println(g.pc.playerName + " has no works, starting blessing")
-					g.startBlessing()
-					return nil
-				}
-				if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-					cursorX, cursorY := ebiten.CursorPosition()
-					// if clicked end phase, start blessing
-					if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
-						fmt.Println(g.pc.playerName + " clicked end works phase, starting blessing")
+		// if there is some special decision we have to make, listen for it
+		if g.decision != -1 {
+			g.listenForDecision()
+		} else {
+			// can only interact if it's our turn
+			if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
+				switch g.phase {
+				case WorkPhase:
+					// if no more works, auto start blessing
+					if g.ts.works == 0 || !g.myCards.HasWorks() {
+						fmt.Println(g.pc.playerName + " has no works, starting blessing")
 						g.startBlessing()
 						return nil
 					}
-					// TODO: click to play work cards
-				}
-			case BlessingPhase:
-				// if no more blessings, auto rest
-				if g.ts.blessings == 0 {
-					fmt.Println(g.pc.playerName + " has no blessings, ending turn")
-					g.rest()
-					return nil
-				}
-				if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-					cursorX, cursorY := ebiten.CursorPosition()
-					// if clicked end phase, rest
-					if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
-						fmt.Println(g.pc.playerName + " clicked end blessings phase, ending turn")
+					if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+						cursorX, cursorY := ebiten.CursorPosition()
+						// if clicked end phase, start blessing
+						if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
+							fmt.Println(g.pc.playerName + " clicked end works phase, starting blessing")
+							g.startBlessing()
+							return nil
+						}
+						// click to play work cards
+						if c := g.myCards.inHand(cursorX, cursorY); c != nil {
+							if slices.Contains(c.cardTypes, WorkType) {
+								g.cardEffect(c)
+							}
+						}
+					}
+				case BlessingPhase:
+					// if no more blessings, auto rest
+					if g.ts.blessings == 0 {
+						fmt.Println(g.pc.playerName + " has no blessings, ending turn")
 						g.rest()
 						return nil
 					}
-					// if clicked card to buy, buy it
-					if vp := g.kingdom.In(cursorX, cursorY); vp != nil {
-						// only do something if you can afford it
-						if g.ts.faith >= vp.c.cost {
-							// gains to discard
-							g.myCards.discard = append(g.myCards.discard, vp.c)
-							// tell everyone you bought it so all kingdoms can decrement their supply
-							producerSend(g.pc.producer, []string{Gained, g.pc.playerName, vp.c.name})
+					if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+						cursorX, cursorY := ebiten.CursorPosition()
+						// if clicked end phase, rest
+						if cursorX > EndPhaseX && cursorX < EndPhaseX+EndPhaseWidth && cursorY > EndPhaseY && cursorY < EndPhaseY+EndPhaseHeight {
+							fmt.Println(g.pc.playerName + " clicked end blessings phase, ending turn")
+							g.rest()
+							return nil
+						}
+						// if clicked card to buy, buy it
+						if vp := g.kingdom.In(cursorX, cursorY); vp != nil {
+							// only do something if you can afford it and there are cards left
+							if g.ts.faith >= vp.c.cost && vp.n > 0 {
+								// gains to discard
+								g.myCards.discard = append(g.myCards.discard, vp.c)
+								// tell everyone you bought it so all kingdoms can decrement their supply
+								producerSend(g.pc.producer, []string{Bought, g.pc.playerName, vp.c.name})
+							}
 						}
 					}
 				}
 			}
-
 		}
 	}
 	return nil
@@ -349,17 +370,20 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		ebitenutil.DebugPrint(screen, lobbyMessage)
 	case Playing:
-		// draw player's turn message
 		currentPlayer := g.turnModulus[g.turn%len(g.players)]
-		msg := currentPlayer + "'s turn: " + g.phase
+		promptMsg, decisionSkippable := g.promptDecision()
+		// draw player's turn message if no prompt
+		if promptMsg == "" {
+			promptMsg = currentPlayer + "'s turn: " + g.phase
+		}
 		op := &text.DrawOptions{}
 		op.ColorScale.ScaleWithColor(color.White)
-		text.Draw(screen, msg, &text.GoTextFace{
+		text.Draw(screen, promptMsg, &text.GoTextFace{
 			Source: MPlusFaceSource,
 			Size:   BigFontSize,
 		}, op)
 		// draw turn stats
-		msg = "Works: " + strconv.Itoa(g.ts.works) + " Blessings: " + strconv.Itoa(g.ts.blessings) + " Faith: " + strconv.Itoa(g.ts.faith)
+		msg := "Works: " + strconv.Itoa(g.ts.works) + " Blessings: " + strconv.Itoa(g.ts.blessings) + " Faith: " + strconv.Itoa(g.ts.faith)
 		op = &text.DrawOptions{}
 		op.GeoM.Translate(0, BigFontSize)
 		op.ColorScale.ScaleWithColor(color.White)
@@ -410,8 +434,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			return
 		}
 		g.kingdom.Draw(screen)
-		// draw end phase button if it's our turn
-		if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
+		if decisionSkippable {
+			// draw the skip button
+		} else if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
+			// draw end phase button if it's our turn
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(EndPhaseX, EndPhaseY)
 			switch g.phase {
@@ -429,10 +455,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		} else {
 			displayX = cursorX
 		}
-		if art := g.myCards.inHand(cursorX, cursorY); art != nil {
+		if c := g.myCards.inHand(cursorX, cursorY); c != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
-			screen.DrawImage(art, op)
+			screen.DrawImage(c.artBig, op)
 		} else if vp := g.kingdom.In(cursorX, cursorY); vp != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
@@ -484,7 +510,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 func main() {
-	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]*PlayerData), phase: WorkPhase, ts: TurnStats{works: 1, blessings: 1, faith: 0}}
+	g := &Game{state: RoomName, t: Typewriter{}, players: make(map[string]*PlayerData), phase: WorkPhase, ts: TurnStats{works: 1, blessings: 1, faith: 0}, decision: -1}
 
 	err := ebiten.RunGame(g)
 	if err != nil {

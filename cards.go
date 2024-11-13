@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
 )
 
@@ -23,14 +24,15 @@ const (
 	ReactionType   = 2
 )
 
+// cards
 var (
 	Temptation   = &Card{name: "Temptation", artBig: assets.TemptationBig, artSmall: assets.TemptationSmall, glory: -1, cardTypes: []int{TemptationType}}
 	Study        = &Card{name: "Study", artBig: assets.StudyBig, artSmall: assets.StudySmall, faith: 1, cardTypes: []int{FaithType}}
 	Prayer       = &Card{name: "Prayer", artBig: assets.PrayerBig, artSmall: assets.PrayerSmall, cost: 3, faith: 2, cardTypes: []int{FaithType}}
 	Devotion     = &Card{name: "Devotion", artBig: assets.DevotionBig, artSmall: assets.DevotionSmall, cost: 6, faith: 3, cardTypes: []int{FaithType}}
 	Parable      = &Card{name: "Parable", artBig: assets.ParableBig, artSmall: assets.ParableSmall, cost: 2, glory: 1, cardTypes: []int{GloryType}}
-	Sermon       = &Card{name: "Sermon", artBig: assets.SermonBig, artSmall: assets.SermonSmall, cost: 5, glory: 2, cardTypes: []int{GloryType}}
-	Miracle      = &Card{name: "Miracle", artBig: assets.MiracleBig, artSmall: assets.MiracleSmall, cost: 8, glory: 3, cardTypes: []int{GloryType}}
+	Sermon       = &Card{name: "Sermon", artBig: assets.SermonBig, artSmall: assets.SermonSmall, cost: 5, glory: 3, cardTypes: []int{GloryType}}
+	Miracle      = &Card{name: "Miracle", artBig: assets.MiracleBig, artSmall: assets.MiracleSmall, cost: 8, glory: 6, cardTypes: []int{GloryType}}
 	Bezalel      = &Card{name: "Bezalel", artBig: assets.BezalelBig, artSmall: assets.BezalelSmall, cost: 6, cardTypes: []int{WorkType}}
 	Stumble      = &Card{name: "Stumble", artBig: assets.StumbleBig, artSmall: assets.StumbleSmall, cost: 5, cardTypes: []int{WorkType, TrialType}}
 	Doubt        = &Card{name: "Doubt", artBig: assets.DoubtBig, artSmall: assets.DoubtSmall, cost: 4, cardTypes: []int{WorkType, TrialType}}
@@ -59,6 +61,7 @@ var (
 	Gift         = &Card{name: "Gift", artBig: assets.GiftBig, artSmall: assets.GiftSmall, cost: 3, cardTypes: []int{WorkType}}
 )
 
+// cards for randomization
 var NonBaseCards = []*Card{
 	Bezalel,
 	Stumble,
@@ -87,6 +90,7 @@ var NonBaseCards = []*Card{
 	Desires,
 	Gift}
 
+// convert string name into card
 var CardNameMap = map[string]*Card{
 	"Temptation":   Temptation,
 	"Study":        Study,
@@ -121,4 +125,91 @@ var CardNameMap = map[string]*Card{
 	"Bethlehem":    Bethlehem,
 	"Desires":      Desires,
 	"Gift":         Gift,
+}
+
+// which cards require decisions
+const (
+	DecisionBezalel1 = iota
+	DecisionBezalel2
+)
+
+func (g *Game) cardEffect(c *Card) {
+	producerSend(g.pc.producer, []string{Played, g.pc.playerName, c.name})
+	switch c.name {
+	case Bezalel.name:
+		g.decision = DecisionBezalel1
+	case Stumble.name:
+	case Doubt.name:
+	case NewCreation.name:
+	case Purification.name:
+	case Feed5000.name:
+	case Festival.name:
+	case Eden.name:
+	case LostCoin.name:
+	case Craft.name:
+	case Collection.name:
+	case Merchant.name:
+	case Belief.name:
+	case Decree.name:
+	case GrowFaith.name:
+	case Shield.name:
+	case Wisdom.name:
+	case Depletion.name:
+	case Transform.name:
+	case Plan.name:
+	case Industry.name:
+	case Duplication.name:
+	case Inspiration.name:
+	case Bethlehem.name:
+	case Desires.name:
+	case Gift.name:
+	}
+}
+
+func (g *Game) listenForDecision() {
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		cursorX, cursorY := ebiten.CursorPosition()
+		switch g.decision {
+		case DecisionBezalel1:
+			// if clicked card to gain, gain it
+			if vp := g.kingdom.In(cursorX, cursorY); vp != nil {
+				// only do something if cost is at most 5 and there are cards left
+				if vp.c.cost <= 5 && vp.n > 0 {
+					// gains to hand
+					g.myCards.hand = append(g.myCards.hand, vp.c)
+					// tell everyone you gained it so all kingdoms can decrement their supply
+					producerSend(g.pc.producer, []string{Gained, g.pc.playerName, vp.c.name})
+					// move to next part (put card on deck)
+					g.decision = DecisionBezalel2
+				}
+			}
+		case DecisionBezalel2:
+			if c := g.myCards.inHand(cursorX, cursorY); c != nil {
+				// no more decision
+				g.decision = -1
+				// put in front of deck
+				g.myCards.deck = append([]*Card{c}, g.myCards.deck...)
+				// remove from hand
+				for i, hc := range g.myCards.hand {
+					if hc == c {
+						g.myCards.hand = append(g.myCards.hand[:i], g.myCards.hand[i+1:]...)
+						return
+					}
+				}
+			}
+		}
+	}
+}
+
+// what message should be shown to the player, and can they skip it?
+func (g *Game) promptDecision() (string, bool) {
+	switch g.decision {
+	case -1:
+		return "", false
+	case DecisionBezalel1:
+		return "Select a card to gain costing up to 5 Faith", false
+	case DecisionBezalel2:
+		return "Select a card from your hand to put on your deck", false
+	}
+	return "", false
 }

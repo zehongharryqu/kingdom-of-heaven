@@ -20,6 +20,8 @@ const (
 	ToggledReady = "TR"
 	SetKingdom   = "SK"
 	EndPhase     = "E"
+	Played       = "P"
+	Bought       = "B"
 	Gained       = "G"
 	Glory        = "Gl"
 )

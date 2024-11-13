@@ -79,12 +79,12 @@ func (pc *PlayerCards) Draw(screen *ebiten.Image) {
 	}
 }
 
-// given logical screen pixel location x,y returns the detailed art if there is a card in hand there
-func (pc *PlayerCards) inHand(x, y int) *ebiten.Image {
+// given logical screen pixel location x,y returns the card in hand there
+func (pc *PlayerCards) inHand(x, y int) *Card {
 	localX := x - ((ScreenWidth - ArtSmallWidth*len(pc.hand)) / 2)
 	localY := y - (ScreenHeight - ArtSmallWidth)
 	if localX > 0 && localX < ArtSmallWidth*len(pc.hand) && localY > 0 && localY < ArtSmallWidth {
-		return pc.hand[localX/ArtSmallWidth].artBig
+		return pc.hand[localX/ArtSmallWidth]
 	}
 	return nil
 }

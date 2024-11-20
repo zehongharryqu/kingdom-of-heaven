@@ -24,6 +24,7 @@ const (
 	Bought       = "B"
 	Gained       = "G"
 	Glory        = "Gl"
+	CardSpecific = "C"
 )
 
 type PulsarClient struct {

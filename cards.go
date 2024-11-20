@@ -1,6 +1,8 @@
 package main
 
 import (
+	"slices"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/zehongharryqu/kingdom-of-heaven/assets"
@@ -131,14 +133,23 @@ var CardNameMap = map[string]*Card{
 const (
 	DecisionBezalel1 = iota
 	DecisionBezalel2
+	DecisionStumble
 )
 
-func (g *Game) cardEffect(c *Card) {
+// what runs when you play a card
+func (g *Game) localCardEffect(c *Card) {
 	producerSend(g.pc.producer, []string{Played, g.pc.playerName, c.name})
 	switch c.name {
 	case Bezalel.name:
 		g.decision = DecisionBezalel1
 	case Stumble.name:
+		// gain Devotion if there are any
+		if g.kingdom.v[3].n > 0 {
+			g.myCards.discard = append(g.myCards.discard, Devotion)
+			// tell everyone you gained it so all kingdoms can decrement their supply
+			producerSend(g.pc.producer, []string{Gained, g.pc.playerName, Devotion.name})
+		}
+		g.otherDecisions = len(g.players) - 1
 	case Doubt.name:
 	case NewCreation.name:
 	case Purification.name:
@@ -166,6 +177,64 @@ func (g *Game) cardEffect(c *Card) {
 	}
 }
 
+// what runs when others play a card
+func (g *Game) reactToCard(c *Card) {
+	switch c.name {
+	case Stumble.name:
+		// reveal top 2 cards
+		g.myCards.decision = g.myCards.drawNCards(2, g.myCards.decision)
+		switch {
+		// both cards are non-Study Faiths, make decision
+		case (slices.Contains(g.myCards.decision[0].cardTypes, FaithType) && g.myCards.decision[0].name != "Study") && (slices.Contains(g.myCards.decision[1].cardTypes, FaithType) && g.myCards.decision[1].name != "Study"):
+			g.decision = DecisionStumble
+		// first card is a non-Study faith, release it
+		case slices.Contains(g.myCards.decision[0].cardTypes, FaithType) && g.myCards.decision[0].name != "Study":
+			// tell everyone to add to release pile
+			producerSend(g.pc.producer, []string{CardSpecific, g.pc.playerName, Stumble.name, g.myCards.decision[0].name, g.myCards.decision[1].name, g.myCards.decision[0].name})
+			// discard second card
+			g.myCards.discard = append(g.myCards.discard, g.myCards.decision[1])
+			g.myCards.decision = nil
+		// second card is a non-Study faith, release it
+		case slices.Contains(g.myCards.decision[1].cardTypes, FaithType) && g.myCards.decision[1].name != "Study":
+			// tell everyone to add to release pile
+			producerSend(g.pc.producer, []string{CardSpecific, g.pc.playerName, Stumble.name, g.myCards.decision[0].name, g.myCards.decision[1].name, g.myCards.decision[1].name})
+			// discard first card
+			g.myCards.discard = append(g.myCards.discard, g.myCards.decision[0])
+			g.myCards.decision = nil
+		// neither card is a non-Study faith, discard both
+		default:
+			producerSend(g.pc.producer, []string{CardSpecific, g.pc.playerName, Stumble.name, g.myCards.decision[0].name, g.myCards.decision[1].name})
+			g.myCards.discard = append(g.myCards.discard, g.myCards.decision...)
+			g.myCards.decision = nil
+		}
+	case Doubt.name:
+	case NewCreation.name:
+	case Purification.name:
+	case Feed5000.name:
+	case Festival.name:
+	case Eden.name:
+	case LostCoin.name:
+	case Craft.name:
+	case Collection.name:
+	case Merchant.name:
+	case Belief.name:
+	case Decree.name:
+	case GrowFaith.name:
+	case Shield.name:
+	case Wisdom.name:
+	case Depletion.name:
+	case Transform.name:
+	case Plan.name:
+	case Industry.name:
+	case Duplication.name:
+	case Inspiration.name:
+	case Bethlehem.name:
+	case Desires.name:
+	case Gift.name:
+	}
+}
+
+// react to local decisions made
 func (g *Game) listenForDecision() {
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		cursorX, cursorY := ebiten.CursorPosition()
@@ -184,18 +253,23 @@ func (g *Game) listenForDecision() {
 				}
 			}
 		case DecisionBezalel2:
-			if c := g.myCards.inHand(cursorX, cursorY); c != nil {
+			if i, c := g.myCards.inHand(cursorX, cursorY); c != nil {
 				// no more decision
 				g.decision = -1
 				// put in front of deck
 				g.myCards.deck = append([]*Card{c}, g.myCards.deck...)
 				// remove from hand
-				for i, hc := range g.myCards.hand {
-					if hc == c {
-						g.myCards.hand = append(g.myCards.hand[:i], g.myCards.hand[i+1:]...)
-						return
-					}
-				}
+				g.myCards.hand = append(g.myCards.hand[:i], g.myCards.hand[i+1:]...)
+			}
+		case DecisionStumble:
+			if i, c := g.myCards.inDecision(cursorX, cursorY); c != nil {
+				// no more decision
+				g.decision = -1
+				// tell everyone to add to release pile
+				producerSend(g.pc.producer, []string{CardSpecific, g.pc.playerName, Stumble.name, g.myCards.decision[0].name, g.myCards.decision[1].name, c.name})
+				// discard other card
+				g.myCards.discard = append(g.myCards.discard, g.myCards.decision[1-i])
+				g.myCards.decision = nil
 			}
 		}
 	}
@@ -210,6 +284,8 @@ func (g *Game) promptDecision() (string, bool) {
 		return "Select a card to gain costing up to 5 Faith", false
 	case DecisionBezalel2:
 		return "Select a card from your hand to put on your deck", false
+	case DecisionStumble:
+		return "Select a card to release", false
 	}
 	return "", false
 }

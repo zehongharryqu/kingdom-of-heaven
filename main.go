@@ -36,8 +36,8 @@ const (
 	NormalFontSize = 16
 	SmallFontSize  = 12
 
-	InPlayWorkY  = 250
-	InPlayFaithY = 310
+	InPlayY   = 250
+	DecisionY = 310
 
 	EndPhaseX      = 245
 	EndPhaseY      = 370
@@ -100,6 +100,8 @@ type Game struct {
 	phase string
 	// whether the local player currently needs to make a decision (other than normal work or blessing)
 	decision int
+	// how many other decisions we are waiting for
+	otherDecisions int
 	// the active player's stats
 	ts TurnStats
 	// the kingdom piles
@@ -133,7 +135,7 @@ func (g *Game) rest() {
 	fmt.Printf("discard len: %d \n", len(g.myCards.discard))
 	// draw new hand
 	g.myCards.hand = nil
-	g.myCards.drawNCards(5)
+	g.myCards.hand = g.myCards.drawNCards(5, g.myCards.hand)
 	// tell everyone the blessing phase ended
 	producerSend(g.pc.producer, []string{EndPhase})
 	// spin until the phase changes
@@ -182,9 +184,20 @@ func (g *Game) receiveMessages() {
 				cards[i] = NonBaseCards[idx]
 			}
 			g.kingdom = InitKingdom(cards, len(g.players))
+			// for testing, set a kingdom
+			g.kingdom = InitKingdom([]*Card{Bezalel,
+				Stumble,
+				Doubt,
+				NewCreation,
+				Purification,
+				Feed5000,
+				Festival,
+				Eden,
+				LostCoin,
+				Craft}, len(g.players))
 			// create deck and discard
 			g.myCards = InitPlayerCards()
-			g.myCards.drawNCards(5)
+			g.myCards.hand = g.myCards.drawNCards(5, g.myCards.hand)
 		case EndPhase:
 			switch g.phase {
 			case WorkPhase:
@@ -208,6 +221,10 @@ func (g *Game) receiveMessages() {
 			g.actionLog = append(g.actionLog, message[1]+" played "+message[2])
 			// decrement the player's works
 			g.ts.works--
+			// if you are not this player, react
+			if g.pc.playerName != message[1] {
+				g.reactToCard(CardNameMap[message[2]])
+			}
 		case Gained:
 			// write that the player gained the card
 			g.actionLog = append(g.actionLog, message[1]+" gained "+message[2])
@@ -225,6 +242,19 @@ func (g *Game) receiveMessages() {
 			// update the player's data with their final glory
 			glory, _ := strconv.Atoi(message[2])
 			g.players[message[1]].setGlory(glory)
+		case CardSpecific:
+			switch message[2] {
+			case Stumble.name:
+				// message for actionlog
+				msg := message[1] + " revealed " + message[3] + ", " + message[4]
+				// if there is a released card, release it
+				if len(message) == 6 {
+					msg += "; released " + message[5]
+					g.kingdom.released = append(g.kingdom.released, CardNameMap[message[5]])
+				}
+				g.actionLog = append(g.actionLog, msg)
+				g.otherDecisions--
+			}
 		}
 	}
 }
@@ -287,8 +317,8 @@ func (g *Game) Update() error {
 		if g.decision != -1 {
 			g.listenForDecision()
 		} else {
-			// can only interact if it's our turn
-			if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
+			// can only interact if it's our turn and we aren't waiting
+			if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName && g.otherDecisions == 0 {
 				switch g.phase {
 				case WorkPhase:
 					// if no more works, auto start blessing
@@ -306,9 +336,9 @@ func (g *Game) Update() error {
 							return nil
 						}
 						// click to play work cards
-						if c := g.myCards.inHand(cursorX, cursorY); c != nil {
+						if _, c := g.myCards.inHand(cursorX, cursorY); c != nil {
 							if slices.Contains(c.cardTypes, WorkType) {
-								g.cardEffect(c)
+								g.localCardEffect(c)
 							}
 						}
 					}
@@ -374,7 +404,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		promptMsg, decisionSkippable := g.promptDecision()
 		// draw player's turn message if no prompt
 		if promptMsg == "" {
-			promptMsg = currentPlayer + "'s turn: " + g.phase
+			if g.otherDecisions > 1 {
+				promptMsg = "Waiting for " + strconv.Itoa(g.otherDecisions) + " players"
+			} else if g.otherDecisions == 1 {
+				promptMsg = "Waiting for 1 player"
+			} else {
+				promptMsg = currentPlayer + "'s turn: " + g.phase
+			}
 		}
 		op := &text.DrawOptions{}
 		op.ColorScale.ScaleWithColor(color.White)
@@ -405,23 +441,27 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Source: MPlusFaceSource,
 			Size:   SmallFontSize,
 		}, op)
-		// draw in play cards (mat, label, works, faiths)
-		vector.DrawFilledRect(screen, 0, InPlayWorkY, KingdomMatX, (InPlayFaithY-InPlayWorkY)+ArtSmallWidth+BigFontSize+10, color.RGBA{245, 133, 63, 255}, true)
+		// draw in play cards (mat, label, cards)
+		vector.DrawFilledRect(screen, 0, InPlayY-10, KingdomMatX, 10+ArtSmallWidth+BigFontSize+10, color.RGBA{245, 133, 63, 255}, true)
 		textOp := &text.DrawOptions{}
-		textOp.GeoM.Translate(0, InPlayFaithY+ArtSmallWidth)
+		textOp.GeoM.Translate(0, InPlayY+ArtSmallWidth)
 		textOp.ColorScale.ScaleWithColor(color.White)
-		text.Draw(screen, currentPlayer+"'s Cards in Play", &text.GoTextFace{
+		var inPlayLabel string
+		var inPlayCards []*Card
+		if g.phase == WorkPhase {
+			inPlayLabel = currentPlayer + "'s Work Cards in Play"
+			inPlayCards = g.inPlayWork
+		} else {
+			inPlayLabel = currentPlayer + "'s Faith Cards in Play"
+			inPlayCards = g.inPlayFaith
+		}
+		text.Draw(screen, inPlayLabel, &text.GoTextFace{
 			Source: MPlusFaceSource,
 			Size:   BigFontSize,
 		}, textOp)
-		for i, c := range g.inPlayWork {
+		for i, c := range inPlayCards {
 			op := &ebiten.DrawImageOptions{}
-			op.GeoM.Translate(float64(i*ArtSmallWidth), InPlayWorkY)
-			screen.DrawImage(c.artSmall, op)
-		}
-		for i, c := range g.inPlayFaith {
-			op := &ebiten.DrawImageOptions{}
-			op.GeoM.Translate(float64(i*ArtSmallWidth), InPlayFaithY)
+			op.GeoM.Translate(float64(i*ArtSmallWidth), InPlayY)
 			screen.DrawImage(c.artSmall, op)
 		}
 		// draw player cards
@@ -434,6 +474,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			return
 		}
 		g.kingdom.Draw(screen)
+		// draw buttons
 		if decisionSkippable {
 			// draw the skip button
 		} else if g.turnModulus[g.turn%len(g.players)] == g.pc.playerName {
@@ -455,7 +496,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		} else {
 			displayX = cursorX
 		}
-		if c := g.myCards.inHand(cursorX, cursorY); c != nil {
+		if _, c := g.myCards.inHand(cursorX, cursorY); c != nil {
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Translate(float64(displayX), 0)
+			screen.DrawImage(c.artBig, op)
+		} else if _, c := g.myCards.inDecision(cursorX, cursorY); c != nil {
 			op := &ebiten.DrawImageOptions{}
 			op.GeoM.Translate(float64(displayX), 0)
 			screen.DrawImage(c.artBig, op)

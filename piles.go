@@ -2,7 +2,6 @@ package main
 
 import (
 	"cmp"
-	"fmt"
 	"image/color"
 	"math/rand"
 	"slices"
@@ -14,18 +13,19 @@ import (
 )
 
 type PlayerCards struct {
-	hand, deck, discard []*Card
+	hand, deck, discard, decision []*Card
 }
 
 func InitPlayerCards() *PlayerCards {
 	return &PlayerCards{discard: []*Card{Study, Study, Study, Study, Study, Study, Study, Parable, Parable, Parable}}
 }
 
-func (pc *PlayerCards) drawNCards(n int) {
-	fmt.Printf("hand %d, discard %d, deck %d, drawing %d cards\n", len(pc.hand), len(pc.discard), len(pc.deck), n)
+// draws n cards into dest and returns the result
+func (pc *PlayerCards) drawNCards(n int, dest []*Card) []*Card {
+	// fmt.Printf("hand %d, discard %d, deck %d, drawing %d cards\n", len(pc.hand), len(pc.discard), len(pc.deck), n)
 	if len(pc.deck)+len(pc.discard) < n {
 		// not enough in deck and discard, draw everything
-		pc.hand = slices.Concat(pc.hand, pc.deck, pc.discard)
+		dest = slices.Concat(dest, pc.deck, pc.discard)
 		pc.deck = nil
 		pc.discard = nil
 	} else {
@@ -38,26 +38,34 @@ func (pc *PlayerCards) drawNCards(n int) {
 			pc.deck = append(pc.deck, pc.discard...)
 			pc.discard = nil
 		}
-		// draw into hand
-		pc.hand = append(pc.hand, pc.deck[:n]...)
+		// draw into dest
+		dest = append(dest, pc.deck[:n]...)
 		if len(pc.deck) == n {
 			pc.deck = nil
 		} else {
 			pc.deck = pc.deck[n:]
 		}
 	}
-	// sort hand
-	slices.SortFunc(pc.hand, func(a, b *Card) int {
+	// sort
+	slices.SortFunc(dest, func(a, b *Card) int {
 		return cmp.Or(
 			cmp.Compare(slices.Min(a.cardTypes), slices.Min(b.cardTypes)),
 			cmp.Compare(b.cost, a.cost),
 			cmp.Compare(a.name, b.name),
 		)
 	})
-	fmt.Printf("hand %d, discard %d, deck %d\n", len(pc.hand), len(pc.discard), len(pc.deck))
+	// fmt.Printf("hand %d, discard %d, deck %d\n", len(pc.hand), len(pc.discard), len(pc.deck))
+	return dest
 }
 
 func (pc *PlayerCards) Draw(screen *ebiten.Image) {
+	// decision
+	offset := (ScreenWidth - ArtSmallWidth*len(pc.decision)) / 2
+	for i, c := range pc.decision {
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(float64(offset+i*ArtSmallWidth), DecisionY)
+		screen.DrawImage(c.artSmall, op)
+	}
 	// deck
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(DeckPileX, DiscardDeckPileY)
@@ -71,7 +79,7 @@ func (pc *PlayerCards) Draw(screen *ebiten.Image) {
 		screen.DrawImage(assets.DiscardSmall, op)
 	}
 	// hand
-	offset := (ScreenWidth - ArtSmallWidth*len(pc.hand)) / 2
+	offset = (ScreenWidth - ArtSmallWidth*len(pc.hand)) / 2
 	for i, c := range pc.hand {
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Translate(float64(offset+i*ArtSmallWidth), ScreenHeight-ArtSmallWidth)
@@ -79,14 +87,24 @@ func (pc *PlayerCards) Draw(screen *ebiten.Image) {
 	}
 }
 
+// given logical screen pixel location x,y returns the decision card there
+func (pc *PlayerCards) inDecision(x, y int) (int, *Card) {
+	localX := x - ((ScreenWidth - ArtSmallWidth*len(pc.decision)) / 2)
+	localY := y - DecisionY
+	if localX > 0 && localX < ArtSmallWidth*len(pc.decision) && localY > 0 && localY < ArtSmallWidth {
+		return localX / ArtSmallWidth, pc.decision[localX/ArtSmallWidth]
+	}
+	return -1, nil
+}
+
 // given logical screen pixel location x,y returns the card in hand there
-func (pc *PlayerCards) inHand(x, y int) *Card {
+func (pc *PlayerCards) inHand(x, y int) (int, *Card) {
 	localX := x - ((ScreenWidth - ArtSmallWidth*len(pc.hand)) / 2)
 	localY := y - (ScreenHeight - ArtSmallWidth)
 	if localX > 0 && localX < ArtSmallWidth*len(pc.hand) && localY > 0 && localY < ArtSmallWidth {
-		return pc.hand[localX/ArtSmallWidth]
+		return localX / ArtSmallWidth, pc.hand[localX/ArtSmallWidth]
 	}
-	return nil
+	return -1, nil
 }
 
 // given logical screen pixel location x,y returns the number of cards in deck if hovered

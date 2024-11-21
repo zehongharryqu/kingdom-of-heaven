@@ -134,6 +134,7 @@ const (
 	DecisionBezalel1 = iota
 	DecisionBezalel2
 	DecisionStumble
+	DecisionDoubt
 )
 
 // what runs when you play a card
@@ -143,14 +144,21 @@ func (g *Game) localCardEffect(c *Card) {
 	case Bezalel.name:
 		g.decision = DecisionBezalel1
 	case Stumble.name:
+		g.otherDecisions += len(g.players) - 1
 		// gain Devotion if there are any
 		if g.kingdom.v[3].n > 0 {
 			g.myCards.discard = append(g.myCards.discard, Devotion)
 			// tell everyone you gained it so all kingdoms can decrement their supply
 			producerSend(g.pc.producer, []string{Gained, g.pc.playerName, Devotion.name})
 		}
-		g.otherDecisions = len(g.players) - 1
 	case Doubt.name:
+		g.otherDecisions += len(g.players) - 1
+		// gain Prayer if there are any
+		if g.kingdom.v[2].n > 0 {
+			g.myCards.deck = append(g.myCards.deck, Prayer)
+			// tell everyone you gained it so all kingdoms can decrement their supply
+			producerSend(g.pc.producer, []string{Gained, g.pc.playerName, Prayer.name})
+		}
 	case NewCreation.name:
 	case Purification.name:
 	case Feed5000.name:
@@ -208,6 +216,15 @@ func (g *Game) reactToCard(c *Card) {
 			g.myCards.decision = nil
 		}
 	case Doubt.name:
+		if is, glorys := where(g.myCards.hand, func(c *Card) bool { return slices.Contains(c.cardTypes, GloryType) }); len(glorys) > 1 {
+			// decide which one to put on deck
+			g.decision = DecisionDoubt
+			g.myCards.decision = glorys
+			_, g.myCards.hand = where(g.myCards.hand, func(c *Card) bool { return !slices.Contains(c.cardTypes, GloryType) })
+		} else if len(glorys) == 1 {
+			// put the glory card on deck
+			g.myCards.deck = append(g.myCards.deck, g.myCards.hand[is[0]])
+		}
 	case NewCreation.name:
 	case Purification.name:
 	case Feed5000.name:
@@ -217,9 +234,6 @@ func (g *Game) reactToCard(c *Card) {
 	case Craft.name:
 	case Collection.name:
 	case Merchant.name:
-	case Belief.name:
-	case Decree.name:
-	case GrowFaith.name:
 	case Shield.name:
 	case Wisdom.name:
 	case Depletion.name:
@@ -256,8 +270,8 @@ func (g *Game) listenForDecision() {
 			if i, c := g.myCards.inHand(cursorX, cursorY); c != nil {
 				// no more decision
 				g.decision = -1
-				// put in front of deck
-				g.myCards.deck = append([]*Card{c}, g.myCards.deck...)
+				// put on top of deck
+				g.myCards.deck = append(g.myCards.deck, c)
 				// remove from hand
 				g.myCards.hand = append(g.myCards.hand[:i], g.myCards.hand[i+1:]...)
 			}

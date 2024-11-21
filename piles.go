@@ -35,15 +35,15 @@ func (pc *PlayerCards) drawNCards(n int, dest []*Card) []*Card {
 			rand.Shuffle(len(pc.discard), func(i, j int) {
 				pc.discard[i], pc.discard[j] = pc.discard[j], pc.discard[i]
 			})
-			pc.deck = append(pc.deck, pc.discard...)
+			pc.deck = append(pc.discard, pc.deck...)
 			pc.discard = nil
 		}
 		// draw into dest
-		dest = append(dest, pc.deck[:n]...)
+		dest = append(dest, pc.deck[len(pc.deck)-n:]...)
 		if len(pc.deck) == n {
 			pc.deck = nil
 		} else {
-			pc.deck = pc.deck[n:]
+			pc.deck = pc.deck[:len(pc.deck)-n]
 		}
 	}
 	// sort

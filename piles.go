@@ -40,11 +40,7 @@ func (pc *PlayerCards) drawNCards(n int, dest []*Card) []*Card {
 		}
 		// draw into dest
 		dest = append(dest, pc.deck[len(pc.deck)-n:]...)
-		if len(pc.deck) == n {
-			pc.deck = nil
-		} else {
-			pc.deck = pc.deck[:len(pc.deck)-n]
-		}
+		pc.deck = pc.deck[:len(pc.deck)-n]
 	}
 	// sort
 	slices.SortFunc(dest, func(a, b *Card) int {

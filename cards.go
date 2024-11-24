@@ -189,6 +189,8 @@ func (g *Game) localCardEffect(c *Card) {
 func (g *Game) reactToCard(c *Card) {
 	switch c.name {
 	case Stumble.name:
+		// everyone needs to decide
+		g.otherDecisions += len(g.players) - 1
 		// reveal top 2 cards
 		g.myCards.decision = g.myCards.drawNCards(2, g.myCards.decision)
 		switch {
@@ -216,6 +218,8 @@ func (g *Game) reactToCard(c *Card) {
 			g.myCards.decision = nil
 		}
 	case Doubt.name:
+		// everyone needs to decide
+		g.otherDecisions += len(g.players) - 1
 		if is, glorys := where(g.myCards.hand, func(c *Card) bool { return slices.Contains(c.cardTypes, GloryType) }); len(glorys) > 1 {
 			// decide which one to put on deck
 			g.decision = DecisionDoubt
@@ -223,7 +227,17 @@ func (g *Game) reactToCard(c *Card) {
 			_, g.myCards.hand = where(g.myCards.hand, func(c *Card) bool { return !slices.Contains(c.cardTypes, GloryType) })
 		} else if len(glorys) == 1 {
 			// put the glory card on deck
-			g.myCards.deck = append(g.myCards.deck, g.myCards.hand[is[0]])
+			c := g.myCards.hand[is[0]]
+			g.myCards.deck = append(g.myCards.deck, c)
+			g.myCards.hand = append(g.myCards.hand[:is[0]], g.myCards.hand[is[0]+1:]...)
+			producerSend(g.pc.producer, []string{CardSpecific, g.pc.playerName, Doubt.name, c.name})
+		} else {
+			// reveal hand with no glorys
+			payload := []string{CardSpecific, g.pc.playerName, Doubt.name}
+			for _, c := range g.myCards.hand {
+				payload = append(payload, c.name)
+			}
+			producerSend(g.pc.producer, payload)
 		}
 	case NewCreation.name:
 	case Purification.name:
@@ -285,6 +299,17 @@ func (g *Game) listenForDecision() {
 				g.myCards.discard = append(g.myCards.discard, g.myCards.decision[1-i])
 				g.myCards.decision = nil
 			}
+		case DecisionDoubt:
+			if i, c := g.myCards.inDecision(cursorX, cursorY); c != nil {
+				// no more decision
+				g.decision = -1
+				// put the glory card on deck
+				g.myCards.deck = append(g.myCards.deck, c)
+				// return others to hand
+				g.myCards.hand = slices.Concat(g.myCards.hand, g.myCards.decision[:i], g.myCards.decision[i+1:])
+				g.myCards.decision = nil
+				producerSend(g.pc.producer, []string{CardSpecific, g.pc.playerName, Doubt.name, c.name})
+			}
 		}
 	}
 }
@@ -300,6 +325,8 @@ func (g *Game) promptDecision() (string, bool) {
 		return "Select a card from your hand to put on your deck", false
 	case DecisionStumble:
 		return "Select a card to release", false
+	case DecisionDoubt:
+		return "Select a card to put on your deck", false
 	}
 	return "", false
 }

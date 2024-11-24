@@ -132,7 +132,6 @@ func (g *Game) startBlessing() {
 func (g *Game) rest() {
 	// put hand and in play cards into discard
 	g.myCards.discard = slices.Concat(g.myCards.discard, g.inPlayWork, g.myCards.hand)
-	fmt.Printf("discard len: %d \n", len(g.myCards.discard))
 	// draw new hand
 	g.myCards.hand = nil
 	g.myCards.hand = g.myCards.drawNCards(5, g.myCards.hand)
@@ -219,6 +218,8 @@ func (g *Game) receiveMessages() {
 		case Played:
 			// write that the player played the card
 			g.actionLog = append(g.actionLog, message[1]+" played "+message[2])
+			// draw the card in play
+			g.inPlayWork = append(g.inPlayWork, CardNameMap[message[2]])
 			// decrement the player's works
 			g.ts.works--
 			// if you are not this player, react
@@ -251,6 +252,23 @@ func (g *Game) receiveMessages() {
 				if len(message) == 6 {
 					msg += "; released " + message[5]
 					g.kingdom.released = append(g.kingdom.released, CardNameMap[message[5]])
+				}
+				g.actionLog = append(g.actionLog, msg)
+				g.otherDecisions--
+			case Doubt.name:
+				msg := message[1]
+				if n := len(message); n > 4 {
+					// no glory cards since revealed hand
+					msg += " revealed " + strings.Join(message[3:], ", ")
+				} else if n == 4 {
+					// revealed 1 card
+					if slices.Contains(CardNameMap[message[3]].cardTypes, GloryType) {
+						msg += " put " + message[3] + " on deck"
+					} else {
+						msg += " revealed " + message[3]
+					}
+				} else {
+					msg += " had no cards to reveal"
 				}
 				g.actionLog = append(g.actionLog, msg)
 				g.otherDecisions--
